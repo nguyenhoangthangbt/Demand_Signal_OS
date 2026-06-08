@@ -1,0 +1,53 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "demand_signal_os"
+version = "0.1.0"
+description = "Probabilistic demand signal engine for the Planning2Cash internal playground"
+authors = [{name = "Thang"}]
+requires-python = ">=3.11"
+license = {text = "Proprietary"}
+
+dependencies = [
+    # Pinned per CONSTITUTION §10 Nixtla wrap decision (Apache 2.0)
+    "statsforecast==2.0.3",
+    "hierarchicalforecast==1.5.1",
+    "utilsforecast>=0.2.0,<1.0",
+    "lightgbm>=4.0,<5.0",
+    # Core
+    "pydantic>=2.6,<3.0",
+    "numpy>=1.24,<3.0",
+    "pandas>=2.0,<3.0",
+    "scipy>=1.11,<2.0",
+    "pyyaml>=6.0,<7.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=4.1",
+    "mypy>=1.8",
+    "ruff>=0.4",
+    "hypothesis>=6.100",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+plugins = ["pydantic.mypy"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "SIM"]
