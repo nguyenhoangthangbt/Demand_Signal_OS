@@ -67,10 +67,11 @@ class TimeBucket(BaseModel):
 
 ```python
 class CensoringFlag(str, Enum):
-    REAL_ZERO = "real_zero"
-    STOCKOUT_CENSORED = "stockout_censored"
-    PARTIAL_CENSORED = "partial_censored"
-    UNKNOWN = "unknown"
+    OBSERVED = "observed"              # units_sold > 0 with no stockout
+    REAL_ZERO = "real_zero"            # units_sold == 0, in stock all bucket
+    STOCKOUT_CENSORED = "stockout_censored"  # zero sales because OOS
+    PARTIAL_CENSORED = "partial_censored"    # some demand before mid-bucket OOS
+    UNKNOWN = "unknown"                # legacy / source did not flag; exclude
 
 class DemandActual(BaseModel):
     schema_version: int = 1

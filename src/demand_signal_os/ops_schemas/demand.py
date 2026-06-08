@@ -16,6 +16,16 @@ from demand_signal_os.ops_schemas.hierarchy import TimeBucket
 
 
 class CensoringFlag(str, Enum):
+    """Status of a DemandActual's units_sold value.
+
+    OBSERVED — units_sold > 0 with no stockout; the value is real demand.
+    REAL_ZERO — units_sold == 0, in stock the whole bucket; genuine no-demand.
+    STOCKOUT_CENSORED — units_sold == 0 because SKU was out of stock.
+    PARTIAL_CENSORED — some demand observed before mid-bucket stockout.
+    UNKNOWN — legacy / source did not flag; excluded from training.
+    """
+
+    OBSERVED = "observed"
     REAL_ZERO = "real_zero"
     STOCKOUT_CENSORED = "stockout_censored"
     PARTIAL_CENSORED = "partial_censored"

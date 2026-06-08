@@ -33,18 +33,17 @@ def tier1_heuristic(
     """Tier 1 heuristic — resolves CensoringFlag.UNKNOWN at ingestion.
 
     Rules:
-    - units_sold > 0 → REAL_ZERO is impossible; leave flag if already set,
-      else mark UNKNOWN (record will be excluded from training).
+    - units_sold > 0 → OBSERVED (real demand directly seen, no censoring)
     - units_sold == 0 + in_stock + snapshot available → REAL_ZERO
     - units_sold == 0 + out_of_stock + snapshot available → STOCKOUT_CENSORED
-    - units_sold == 0 + no snapshot → UNKNOWN (exclude)
+    - units_sold == 0 + no snapshot → UNKNOWN (exclude from training)
     - Pre-set flag (not UNKNOWN) → respected
     """
     if record.censoring != CensoringFlag.UNKNOWN:
         return record
 
     if record.units_sold > 0:
-        return record  # observed demand, leave as is
+        return record.model_copy(update={"censoring": CensoringFlag.OBSERVED})
 
     if snapshot is None:
         return record  # no info, stay UNKNOWN — caller excludes
