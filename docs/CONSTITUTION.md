@@ -3,11 +3,11 @@
 > Probabilistic demand signal engine for the Planning2Cash internal playground.
 > Forecast honestly. Reconcile hierarchically. Hand probabilistic outputs to every downstream consumer without information loss.
 
-**Status:** v0 founding draft (2026-06-08) on branch `feat/founding-design`. Pending MAO triangulation + founder approval.
+**Status:** v0.1 founding draft (2026-06-08) on branch `feat/founding-design`. Revised from v0 after two rounds of MAO triangulation (architect / simos_consultant / litreview_simos_cli / brainstormer Round 1; architect / simos_consultant / litreview_simos_cli Round 2). All 16 Round-1 revisions + 7 Round-2 refinements applied.
 
 **Repo:** `github.com/nguyenhoangthangbt/Demand_Signal_OS` — sibling to `simulation_os/`, `Planning_os/`, `AlgoTrade_os/`, `LitReview_os/`, `Analytic_os/`. Cloned under `platforms_os/Demand_Signal_OS/`.
 
-**Port slot:** 8006 (next after AlgoTrade 8005).
+**Port slot:** 8006 (reserved for v0.1.5 API extraction; v0.1 ships as library only — see §11).
 
 ---
 
@@ -27,7 +27,7 @@ It exists because:
 - **Hierarchical reconciliation** so SD-aggregate, DES-entity, and O2C-transactional views share a single consistent forecast.
 - **Stockout-censored estimation** — explicit handling of when zeros are real zeros vs. censored stockout periods.
 - **Inventory-policy math** — safety-stock, reorder-point, (Q,R), (s,S), base-stock, PIR (Planned Independent Requirement) generation. The generalizable mathematical core of F2S, scoped per `F2S_BOUNDARY.md`.
-- **Backtesting harness** — walk-forward, out-of-sample, cost-aware evaluation (service-level vs. holding-cost vs. stockout-cost tradeoff curves).
+- **Backtesting harness** — walk-forward, M5-aligned, cost-aware evaluation (service-level vs. holding-cost vs. stockout-cost tradeoff curves). See `BACKTESTING.md`.
 - **Configuration-time customer fit** — every customer-variable parameter (service levels, lead times, distributions, ABC class) lives in YAML config, never in code.
 
 ## 3. Scope — what it is NOT
@@ -50,7 +50,7 @@ It exists because:
 | SKU count | 100s–10,000s per location |
 | Location structure | Multi-echelon (factory → DC → regional DC) |
 | Forecast horizons | 30 days (operational) / 6 months (tactical) / 18 months (strategic) |
-| Distinguishing math | Croston/TSB for intermittents, (s,S) for multi-echelon DC, hierarchical reconciliation |
+| Distinguishing math | Croston/TSB/SBA for intermittents, (s,S) for multi-echelon DC, hierarchical reconciliation |
 | Rationale | Closest archetype to existing O2C lighthouse domain; cleanest test against SimOS DES + PlanningOS SD |
 
 Adjacent archetypes documented as roadmap layers, not v0.1 surface:
@@ -62,17 +62,39 @@ Adjacent archetypes documented as roadmap layers, not v0.1 surface:
 
 ## 5. v0.1 forecasting methods
 
-Three methods, chosen for orthogonal coverage and explainability:
+Five methods (three primary + two intermittent variants), all wrapped from Nixtla per §10. Chosen for orthogonal coverage and explainability.
 
-| Method | Why | Reference |
-|---|---|---|
-| **ETS** (Error-Trend-Seasonal state-space) | Seasonal, steady-volume series. Probabilistic via state-space innovations. | Hyndman & Athanasopoulos, *Forecasting: Principles and Practice* (3rd ed.) |
-| **Croston / TSB** | Intermittent demand. Decomposes inter-demand intervals from demand sizes. | Croston 1972; Teunter-Syntetos-Babai 2011 (TSB) |
-| **Gradient-boosting with calendar + promo + lag features** | Explainable, non-linear, multivariate. Quantile loss for probabilistic outputs. | Hyndman & Athanasopoulos ch. 12; LightGBM quantile regression |
+| Method | Why | Nixtla class | Reference |
+|---|---|---|---|
+| **ETS** (Error-Trend-Seasonal state-space) | Seasonal, steady-volume series. Probabilistic via state-space innovations. | `AutoETS` | Hyndman et al. (2008), *Forecasting with Exponential Smoothing*; Hyndman & Athanasopoulos (2021), *Forecasting: Principles and Practice* (3rd ed.) |
+| **CrostonOptimized** *(default Croston variant)* | Intermittent demand with MLE-optimized smoothing parameter (strictly better than fixed α=0.1) | `CrostonOptimized` | Croston (1972), *Operational Research Quarterly* 23(3) |
+| **TSB** | Intermittent with obsolescence handling — decomposes inter-demand intervals from demand sizes; separate `alpha_d` (demand) + `alpha_p` (probability) smoothing | `TSB` | Teunter, Syntetos & Babai (2011), *EJOR* 214(3), 606–615 |
+| **SBA** *(canonical intermittent benchmark)* | Croston with Syntetos-Boylan 0.95 debiasing factor — the standard benchmark for intermittent-demand studies since 2005 | `CrostonSBA` | Syntetos & Boylan (2005), *IJF* 21(2), 303–314 |
+| **Gradient-boosting (LightGBM quantile)** | Explainable (SHAP), non-linear, multivariate. Quantile loss for probabilistic outputs. | `SklearnModel` wrapping LightGBM | Hyndman & Athanasopoulos (2021) ch. 12; LightGBM quantile regression |
 
-**Hierarchical reconciliation:** MinT (Minimum Trace, Wickramasuriya-Athanasopoulos-Hyndman 2019) over the SKU → family → total + location → region → total hierarchies. Bottom-up reconciliation as v0.1 fallback if MinT covariance estimation is unstable.
+**Mandatory benchmarks** (M5-aligned, every method must beat in backtest):
 
-**v0.2+ candidates** (documented, not v0.1): N-BEATS, NHITS, Temporal Fusion Transformer (Lim et al. 2021), DeepAR (Salinas et al. 2020).
+| Benchmark | Why mandatory |
+|---|---|
+| **Naïve seasonal** | The "must-beat" floor for any seasonal series |
+| **SES** (Simple Exponential Smoothing) | Floor for non-seasonal series |
+| **Moving Average** | Floor for stable-mean series |
+
+See `BACKTESTING.md` for the full evaluation protocol.
+
+**Hierarchical reconciliation:** Bottom-up is the **v0.1 default** — robust, no covariance estimation, guaranteed coherence, O(N·Q) compute (Hyndman & Athanasopoulos 2021, ch. 11.2). MinT with Schäfer-Strimmer shrinkage (`mint_shrink`, Wickramasuriya-Athanasopoulos-Hyndman 2019; Schäfer & Strimmer 2005) is a **v0.2 stretch** — at 10k SKU × 10 location = 100k bottom series scale, MinT requires a 100k×100k covariance matrix (~80 GB float64) that the JOSS paper benchmark shows yields only 3–8% WRMSSE improvement at higher aggregation levels (Olivares, Garza & Canseco 2023, *JOSS* 8(84)).
+
+**v0.2+ candidates** (documented, NOT v0.1):
+
+- **NHITS** (Challu et al. 2023, *AAAI*) — 50× faster than Transformer-based at comparable accuracy
+- **Temporal Fusion Transformer** (Lim, Arık, Loeff & Pfister 2021, *IJF* 37(4), 1748–1764) — interpretable attention
+- **DeepAR** (Salinas, Flunkert, Gasthaus & Januschowski 2020, *IJF* 36(3), 1181–1191) — needs hundreds of related series to shine; defer until v0.2
+- **MinT with shrinkage** (see above) — covariance estimator note above
+- **ADIDA** (Nikolopoulos et al. 2011, *JORS* 62(3)) — for very-extreme intermittence (>90% zero periods)
+- **iETS** (Svetunkov & Boylan 2023, *IJPE*) — unified occurrence + demand-size likelihood; monitor accumulating citations
+- **Probabilistic reconciliation** (Panagiotelis et al. 2023, *EJOR* 306(2), 693–706) — full distributions not just quantiles
+- **Copula-based bottom-up** (Ben Taieb et al. 2017, *AAAI*; 2020) — preserves cross-series dependence
+- **Syntetos-Boylan method classifier** (ADI × CV² grid) — see §13 roadmap
 
 ## 6. v0.1 inventory-policy methods
 
@@ -80,13 +102,32 @@ The F2S-minimal core. All policies emit **probabilistic decision artifacts** con
 
 | Policy | Use case | Reference |
 |---|---|---|
-| **Newsvendor** | Single-period perishable / short-cycle | Silver-Pyke-Peterson; Zipkin ch. 9 |
-| **(Q,R) continuous review** | Steady-volume, continuous monitoring | Silver-Pyke-Peterson ch. 7 |
-| **(s,S) periodic review** | Multi-echelon, batched ordering | Zipkin ch. 9–10 |
-| **Base-stock** | Single-echelon, lost-sales or backorder | Zipkin ch. 6 |
+| **Newsvendor** | Single-period perishable / short-cycle | Silver, Pyke & Peterson (1998) ch. 9; Zipkin (2000) ch. 9 |
+| **(Q,R) continuous review** | Steady-volume, continuous monitoring | Silver, Pyke & Peterson (1998) ch. 7 |
+| **(s,S) periodic review** *(per-echelon, independent safety stock for multi-echelon)* | Multi-echelon, batched ordering | Zipkin (2000) ch. 9–10 |
+| **Base-stock** | Single-echelon, lost-sales or backorder | Zipkin (2000) ch. 6 |
 | **PIR generation** | Planned Independent Requirements time-series feeding MRP-equivalent downstream | NEO F2S `S082` Demand Management reference |
 
-Safety stock: `SS = z_α · σ_LTD` where `σ_LTD` is the standard deviation of lead-time demand (computed from the forecast quantiles, not from point forecasts).
+**Safety stock — dual mode:**
+
+| Mode | Formula | When |
+|---|---|---|
+| **Cycle-service-level (CSL)** *(v0.1 default)* | `SS = z_α · σ_LTD` where `σ_LTD` is lead-time-demand std from forecast quantiles | Standard for discrete manufacturing distribution (95% / 97.5% / 99% per ABC class) |
+| **Fill-rate (UFR)** | `E[BO] / Q` per Silver-Pyke-Peterson §7.4.2 | Operationally more meaningful; many customer engagements negotiate on fill-rate not CSL |
+
+Selectable via `service_level_type: Literal["csl", "fill_rate"]` config on `InventoryPolicy`. Both modes computed in `inventory_policy/safety_stock.py`.
+
+**Censored estimation references** (for stockout-handling in `estimation/` module):
+
+- Nahmias (1994), "Demand Estimation in Lost Sales Inventory Systems," *Naval Research Logistics* 41(6), 739–757
+- **Huh, W.T. & Rusmevichientong, P. (2009)**, "A Nonparametric Asymptotic Analysis of Inventory Planning with Censored Demand," *Mathematics of Operations Research* 34(1), 103–123
+- **Sachs, A.-L. & Minner, S. (2014)**, "The Data-Driven Newsvendor with Censored Demand Observations," *International Journal of Production Economics* 149, 28–36
+
+**v0.2 inventory-policy items** (NOT v0.1):
+
+- **Graves-Willems optimal multi-echelon allocation** (Graves & Willems 2000, *M&SOM* 2(1), 68–83) — requires network-topology config that is customer-specific; fails v0.1 config-only test. Per-echelon independent (s,S) handles multi-echelon at v0.1.
+- **Service-level-aware joint optimization** — coupled safety-stock + reorder-point optimization
+- **Periodic-review base-stock (R,S)** — derivable from (s,S) parameters at v0.1; standalone v0.2
 
 ## 7. Interfaces — the contract surface
 
@@ -94,58 +135,78 @@ See `contracts/CONTRACTS.md` for the full schema specification. Summary:
 
 **Feeders** (who feeds DemandSignalOS):
 
-- **Order2Cash_os** → transactional history with explicit `CensoringFlag` (zero = real-zero vs. stockout-censored)
+- **Order2Cash_os** → transactional history with explicit `CensoringFlag` via three-tier adapter (heuristic at ingestion → stockout logging → native flag, see CONTRACTS §2.1)
 - **External** → POS, weather, calendar, promotion, events as side-feature tables
 - **LitReview OS** → research-derived covariates (optional)
 - **AlgoTrade data infra** → macro / commodity / FX signals for upstream cost-driver context (reused, not forked)
 
 **Consumers** (who consumes DemandSignalOS):
 
-- **SimOS DES** → probabilistic per-SKU-per-location-per-bucket distributions (quantiles or distribution params); inventory policies expressed as `(Q,R)`/`(s,S)` decision rules per SKU
+- **SimOS DES** → probabilistic per-SKU-per-location-per-bucket distributions (quantiles via aligned distribution enum: `normal`, `lognormal`, `exponential`, `empirical`, `fixed`, `uniform`, `triangular`); inventory policies expressed as `(Q,R)`/`(s,S)` decision rules per SKU. Bulk-query interface (function under v0.1 library; REST endpoint v0.1.5+).
 - **PlanningOS SD** → aggregated flow curves (family/region/month) with uncertainty bands
 - **Order2Cash_os** → near-term order-intake expectations + service-level targets + reorder triggers
-- **Closed-loop critic v2** → forecast accuracy actuals-vs-predicted as a third signal source for the Phase-7 critic
+- **Closed-loop critic v2** → `ForecastAccuracy` with drift_magnitude + baseline_crps + forecast_horizon_remaining + forecast_horizon_label; **pulled** by the critic on its own cadence (not pushed)
 
 ## 8. Architecture sketch
 
 ```
-Demand_Signal_OS/
-  docs/
-    CONSTITUTION.md           ← this file
-    F2S_BOUNDARY.md           ← in/out scope vs NEO F2S
-    contracts/
-      CONTRACTS.md            ← full schema spec
-  ops_schemas/                 ← shared types (extends platforms_os ops_schemas)
-    demand.py                 ← DemandSignal, DemandActual, CensoringFlag
-    forecast.py               ← ForecastBundle, Quantiles, ProbabilisticDistribution
-    policy.py                 ← InventoryPolicy, ReorderTrigger, PIR
-    hierarchy.py              ← SKU/Location hierarchy, reconciliation contracts
-  forecasting/
-    ets/                      ← state-space ETS
-    intermittent/             ← Croston, TSB
-    gbm/                      ← gradient-boosting with covariates
-    reconciliation/           ← MinT + bottom-up
-    backtest/                 ← walk-forward harness
-  inventory_policy/
-    newsvendor.py
-    qr.py                     ← (Q,R) continuous review
-    ss.py                     ← (s,S) periodic review
-    base_stock.py
-    pir.py                    ← PIR generation
-    safety_stock.py           ← z·σ_LTD given probabilistic input
-  api/                        ← REST endpoints on port 8006
-    forecasts.py
-    policies.py
-    health.py
-  config/
-    archetypes/
-      discrete_manufacturing_distribution.yaml
-  tests/
-    forecasting/
-    inventory_policy/
-    integration/              ← end-to-end loop tests
-  CLAUDE.md                   ← dev guide for this repo
+platforms_os/
+  ops_schemas/                ← SHARED top-level package (S1 — promoted from inside this repo)
+    __init__.py
+    demand.py                 ← SKU, Location, TimeBucket, DemandActual, CensoringFlag, DemandSignal
+    forecast.py               ← ForecastBundle, Quantiles, ProbabilisticDistribution, ForecastProvenance
+    policy.py                 ← InventoryPolicy (discriminated union), ReorderTrigger, PIR
+    accuracy.py               ← ForecastAccuracy
+    hierarchy.py              ← SKU/Location hierarchy types
+    fallback.py               ← ForecastFallbackStrategy
+  Demand_Signal_OS/           ← this repo
+    docs/
+      CONSTITUTION.md         ← this file
+      F2S_BOUNDARY.md         ← in/out scope vs NEO F2S
+      BACKTESTING.md          ← M5-aligned protocol
+      contracts/
+        CONTRACTS.md          ← full schema spec
+    forecasting/              ← Nixtla wrap (§10)
+      ets.py                  ← AutoETS wrapper
+      intermittent/           ← CrostonOptimized, TSB, CrostonSBA
+      gbm/                    ← SklearnModel wrapping LightGBM quantile
+      reconciliation/         ← BottomUp wrapper (MinT v0.2)
+    estimation/               ← NEW sibling module (U7 — breaks circular dep)
+      lead_time.py            ← lead-time distribution estimation
+      censoring.py            ← three-tier censoring adapter
+    inventory_policy/         ← custom (NOT in Nixtla)
+      newsvendor.py
+      qr.py
+      ss.py                   ← per-echelon (s,S)
+      base_stock.py
+      pir.py
+      safety_stock.py         ← CSL + fill-rate modes
+    backtest/                 ← custom walk-forward + WIS + WRMSSE
+      harness.py
+      metrics.py
+      benchmarks.py           ← naïve seasonal, SES, MA
+    consumers/
+      simos_adapter.py        ← in-process orchestration (R-4 — library function, not HTTP)
+      planning_adapter.py
+      o2c_adapter.py
+    config/
+      archetypes/
+        discrete_manufacturing_distribution.yaml
+    tests/
 ```
+
+**Library-first design rules (v0.1)** — load-bearing per R-5 from architect Round 2. These rules ensure v0.1.5 API extraction is a *deployment*, not a *rewrite*:
+
+1. **Serializable state** — every component of the forecasting pipeline must be serializable to/from dict (Pydantic model or equivalent). No in-memory-only caches, no un-pickleable closures, no thread-local state that can't be reconstructed from (config, seed).
+2. **No blocking I/O in forecast computation** — the forecast path (`historical data → ForecastBundle`) must be a pure function of (data, config, seed). File I/O, network calls, database queries happen BEFORE the computation path, not during it. Enables future async-worker extraction.
+3. **Config-loadable from YAML or dict** — all configuration (methods, hierarchies, service levels, lead times, ABC classes) loadable from a dict/YAML source. NOT only from Python imports. Enables future API deployment where config comes from a database or environment.
+
+**Deployment topology** (documented for v0.1.5 extraction, not built in v0.1):
+
+- **Async training worker** (Celery / arq / dedicated process) runs the forecast pipeline on a schedule (nightly operational/tactical, weekly strategic)
+- **Sync serving API** (FastAPI on port 8006) reads pre-computed forecasts from a database/cache
+- **Storage**: PostgreSQL for metadata + `ForecastBundle` records; object store for model artifacts; in-memory cache for hot-path serving
+- This is the standard production forecasting-system pattern. The three library-first design rules above are what make this topology extraction possible without rewriting the engine.
 
 ## 9. Non-negotiable disciplines
 
@@ -155,22 +216,119 @@ These are the rules that protect the engine from becoming a customization swamp.
 2. **Every policy or forecast method must cite a textbook/paper reference** in code-level docstrings and `docs/`. If you can't cite it, it's not generalizable — it's a customer fit dressed up as math.
 3. **Probabilistic outputs end-to-end.** No point-forecast collapse at any internal boundary. Consumers may choose to use only the mean (their decision); the engine emits full quantiles always.
 4. **Reproducibility is load-bearing.** Seeded RNG, versioned models, walk-forward backtest with frozen historical cuts. Every forecast bundle carries provenance (`model_id`, `commit_sha`, `seed`, `feature_set_hash`, `data_cut_timestamp`).
-5. **Stockout-censoring honesty.** Zero sales is NEVER silently treated as zero demand. `CensoringFlag` is required on every actual.
-6. **Contracts before engine.** No forecasting code merges until the schema contracts (CONTRACTS.md) are reviewed and approved. The 2026-06-08 founder rule: "build engine v0.1 AFTER the three founding documents are signed off."
+5. **Stockout-censoring honesty.** Zero sales is NEVER silently treated as zero demand. `CensoringFlag` is required on every actual, via the three-tier adapter strategy (CONTRACTS §2.1).
+6. **Contracts before engine.** No forecasting code merges until the schema contracts (CONTRACTS.md) are reviewed and approved.
+7. **No productization without `DECISIONS_LOG` entry.** DemandSignalOS is internal-engine + lighthouse-feeder. Any pressure to ship as a self-serve SKU requires an explicit founder-approved entry in `commercialization/DECISIONS_LOG.md`. The internal pressure to productize will be strong if forecasts are demonstrably better than YAML stopgaps — this rule keeps the decision a conscious one, not a drift.
 
-## 10. What lives WHERE
+## 10. Wrap vs. build — Nixtla as v0.1 forecasting backend
 
-| Concern | Location | Why |
+**Decision (D2):** v0.1 wraps Nixtla's open-source forecasting stack rather than reimplementing the methods from scratch. Saves ~60–70% of forecasting implementation effort with no contract-surface impact.
+
+| Package | Pinned version | License | Citation |
+|---|---|---|---|
+| **`statsforecast`** | 2.0.3 | Apache 2.0 | Garza, F., Canseco, M.M. & Olivares, K.G. (2022), *StatsForecast: Lightning fast forecasting with statistical and econometric models*, Zenodo: 10.5281/zenodo.7738325 |
+| **`hierarchicalforecast`** | 1.5.1 | Apache 2.0 | Olivares, K.G., Garza, F. & Canseco, M.M. (2022), *HierarchicalForecast: A Python framework for hierarchical forecasting*, Zenodo: 10.5281/zenodo.7738325 |
+| **JOSS reference** | — | — | Olivares, K.G., Garza, F. & Canseco, M.M. (2023), "Hierarchical forecasting with Nixtla," *JOSS* 8(84), 5233 |
+
+**Verified Nixtla coverage** (against installed package source, per litreview Round 2):
+
+| DemandSignalOS need | Nixtla class | Notes |
 |---|---|---|
-| Forecasting + inventory-policy math | `Demand_Signal_OS/` (this repo) | Generalizable engine — build once, deploy across customers |
-| Strategic SD flows | `Planning_os/` | Existing — orthogonal scope |
-| Tactical DES | `simulation_os/` | Existing — orthogonal scope |
-| Transactional O2C | `0NEO/6-Order2Cash_os/` | Spun out — commercial scope |
-| Operational F2S (substitution, supersession, batch, quality, DC-to-DC, etc.) | Future `0NEO/F2S_os/` | Reserved — commercial scope, customer-specific |
-| Planning2Cash orchestration | `platforms_os/planning2cash/` (future, thin) | Orchestrator only, not a platform |
-| MAO agent for end-to-end loop | `master_agents_os/examples/planning2cash_runner.yaml` (future) | One agent drives the loop |
+| ETS | `AutoETS` | Auto-selection, configurable season_length, damped |
+| Croston (optimized) | `CrostonOptimized` | MLE α — default Croston variant for v0.1 |
+| Croston (classic) | `CrostonClassic` | α=0.1 fixed — fallback variant |
+| TSB | `TSB` | Separate `alpha_d` + `alpha_p` — canonical Teunter-Syntetos-Babai 2011 |
+| SBA | `CrostonSBA` | Croston × 0.95 debiasing per Syntetos-Boylan 2005 |
+| Gradient boosting | `SklearnModel` (wraps LightGBM quantile) | sklearn-compatible |
+| Bottom-up reconciliation | `BottomUp` | v0.1 default |
+| MinT with shrinkage | `MinTrace(method='mint_shrink')` | v0.2 stretch — Schäfer-Strimmer covariance estimator |
 
-## 11. Relation to locked strategy
+**Custom code (NOT in Nixtla, must implement):**
+
+- Stockout-censored estimation (in `estimation/censoring.py`)
+- Inventory-policy math (in `inventory_policy/`)
+- PIR generation (in `inventory_policy/pir.py`)
+- Walk-forward backtesting harness (in `backtest/`)
+- WIS metric (in `backtest/metrics.py` — ~50 lines)
+- API surface (in `api/`, v0.1.5+ only)
+- `ForecastFallbackStrategy` implementation (in `forecasting/fallback.py`, contract exists in v0.1)
+- Adapter protocol (in `forecasting/protocol.py`) — `ForecastMethod` interface that wraps Nixtla but enables future backend swap without contract-surface change
+
+**Vendor-lock-in risk: LOW.** The wrap boundary is the `ForecastBundle` contract. The `method` field is a string identifier ("ets" | "croston_opt" | "tsb" | "sba" | "gbm"), not a Nixtla import. If Nixtla becomes problematic, only the forecasting backend swaps — custom code (censoring, policy, API, backtest) is unaffected.
+
+## 11. Build sequencing — library-first v0.1, API v0.1.5
+
+**Decision (D1):** v0.1 ships as a Python library (no port 8006, no Docker image, no REST API, no database). API extraction deferred to v0.1.5 only after the library has proven value against the existing PlanningOS↔SimOS closed loop.
+
+**Rationale:**
+
+- PlanningOS already runs on YAML-based demand priors. DemandSignalOS should earn its port by proving it adds value before committing to deployment infrastructure.
+- Library-first defers ~3 days of infra work (Dockerfile, DB schema, REST endpoints, health checks, auth) and reduces SimOS-side integration from ~200 lines + infra to ~160 lines no infra (per simos Round 2 estimate).
+- The closed-loop critic v2 extension lives in PlanningOS; DemandSignalOS emits `ForecastAccuracy` on-demand via library calls.
+- The three library-first design rules (§8) prevent the future extraction from being a rewrite.
+
+**4-phase plan:**
+
+```
+Phase 1 — DemandSignalOS v0.1 library (1–2 weeks)
+  ├─ Create platforms_os/ops_schemas/ shared package
+  ├─ forecasting/ — wrap Nixtla (ETS, CrostonOptimized, TSB, CrostonSBA, GBM)
+  ├─ inventory_policy/ — custom (newsvendor, QR, sS, base-stock, PIR, safety-stock CSL + fill-rate)
+  ├─ estimation/ — lead-time + censoring three-tier adapter
+  ├─ reconciliation/ — BottomUp (Nixtla)
+  ├─ backtest/ — walk-forward + CRPS + sMAPE + WRMSSE + WIS + benchmarks
+  ├─ consumers/simos_adapter.py — in-process orchestration
+  └─ Unit tests + synthetic-data fixture
+
+Phase 2 — SimOS integration (~160 lines, ~2 days; parallelizable with Phase 1)
+  ├─ SimOS-side: add distribution_override to ArrivalConfig + loader.py (~50 lines) ← BLOCKING
+  ├─ SimOS-side: add DemandForecastDistribution to distributions/ (~40 lines)
+  ├─ DemandSignalOS-side: consumers/simos_adapter.py (~80 lines)
+  └─ PlanningOS-side: wire adapter into closed_loop/exporter.py (~10 lines)
+
+Phase 3 — Closed-loop critic v2 (~30 lines, half day)
+  ├─ Add drift_detected detector to PlanningOS critic/archetypes.py
+  └─ Wire ForecastAccuracy into orchestrator's iteration record
+
+Phase 4 — v0.1.5 standalone API extraction (deferred — earned, not assumed)
+  ├─ Trigger criterion: v0.1 library proven against real Planning2Cash loop
+  ├─ REST API on port 8006
+  ├─ Docker image + DB schema + health endpoints
+  ├─ ForecastFallbackStrategy implementation (contract exists in v0.1)
+  └─ Syntetos-Boylan DemandClassifier (§13 roadmap)
+```
+
+**SimOS-side prerequisite** (Phase 2 blocker): a separate feature branch in `simulation_os/` adds `distribution_override: Distribution | None = None` to `ArrivalConfig` and `build_simulation()`. Backward-compatible. Without it, DemandSignalOS cannot inject forecast-derived distributions into SimOS scenarios. This must be coordinated separately, NOT inside `Demand_Signal_OS/`.
+
+## 12. Open questions — RESOLVED in v0.1 draft
+
+The v0 draft carried five open questions. After Round 1 + Round 2 MAO triangulation, all are resolved:
+
+| Q | v0 question | v0.1 resolution |
+|---|---|---|
+| Q1 | `ops_schemas` location | **Top-level shared package at `platforms_os/ops_schemas/`** — avoids reverse dependency (SimOS importing from DemandSignalOS) |
+| Q2 | Third forecasting method (GBM vs probabilistic DL) | **GBM via Nixtla `SklearnModel` wrapping LightGBM quantile** — explainable (SHAP), no GPU dependency, lower data requirements than DeepAR |
+| Q3 | MinT realism for v0.1 | **Bottom-up = v0.1 default. MinT with Schäfer-Strimmer shrinkage = v0.2 stretch** — at 10k+ SKU scale MinT yields only 3–8% WRMSSE improvement at higher aggregation per JOSS benchmark |
+| Q4 | Where actuals_drift signal lives | **In PlanningOS critic (extends Phase-7 verdict schema). DemandSignalOS emits `ForecastAccuracy` on demand (pull, not push)** — keeps coupling one-directional |
+| Q5 | `demand_signal_consultant` MAO agent at launch | **Defer to v0.2** when multi-echelon allocation (Graves-Willems) and DemandClassifier are in scope |
+
+## 13. v0.1.5 / v0.2 roadmap
+
+Items deferred from v0.1 with founder-approved triggers:
+
+| Item | Trigger | Reference |
+|---|---|---|
+| **REST API extraction (port 8006)** | v0.1 library proves value against real Planning2Cash loop | §11 Phase 4 |
+| **MinT with Schäfer-Strimmer shrinkage** | Sustained need for top-level forecast accuracy beyond bottom-up | §5; Olivares-Garza-Canseco 2023 JOSS |
+| **`ForecastFallbackStrategy` implementation** | Cold-start / NPI / promo / discontinued / new-location cases hit in dogfooding (contract exists in v0.1) | CONTRACTS §1 |
+| **Syntetos-Boylan demand classifier** *(new in v0.1.5/v0.2 per litreview R2)* | Manual method selection becomes a friction point. ADI × CV² grid auto-routes SKUs to methods (smooth→ETS, intermittent→CrostonSBA, lumpy→TSB). ~100 lines, `classification/` sibling module | Syntetos & Boylan (2005), *IJF* 21(2) |
+| **Graves-Willems optimal multi-echelon allocation** | Customer engagement requires joint multi-echelon optimization (per-echelon (s,S) handles v0.1 needs) | Graves & Willems (2000), *M&SOM* 2(1), 68–83 |
+| **Probabilistic deep learning** (DeepAR, N-BEATS, NHITS, TFT) | Forecast accuracy gap vs. GBM justifies GPU dependency | §5 v0.2+ candidates |
+| **WIS in `ForecastAccuracy` schema** | First external consumer requests WIS as part of accuracy reporting (implemented as backtest metric in v0.1) | §5 BACKTESTING.md |
+| **Probabilistic reconciliation** (Panagiotelis et al. 2023) | Cross-quantile coherence beyond per-quantile reconciliation needed | §5 v0.2+ candidates |
+| **Adjacent archetypes** — pharma / fashion / grocery / automotive | Real customer engagement in archetype OR Planning2Cash dogfooding hits archetype-specific need | §4 |
+
+## 14. Relation to locked strategy
 
 This platform is **internal-engine + lighthouse-feeder**, not a new commercial surface. It does not contradict:
 
@@ -184,12 +342,9 @@ The locked Enterprise Tier commerce model maps cleanly:
 - **Engine** = product (this repo) → defensible, scalable, generalizable
 - **Operational fit** = engagement (Enterprise tier consulting) → customer-specific work
 
-## 12. Open questions for MAO triangulation
+## 15. Revision history
 
-These are the deliberate ambiguities the founding draft does not resolve, reserved for MAO triangulation in this session:
-
-1. Should `ops_schemas` (the shared types) live in `Demand_Signal_OS/`, or be promoted to a top-level shared package consumed by all platforms?
-2. Is `gradient-boosting with covariates` the right third forecasting method, or should v0.1 favor a probabilistic deep-learning method (DeepAR / Temporal Fusion Transformer)?
-3. Is MinT hierarchical reconciliation realistic for v0.1, or should bottom-up suffice until covariance estimation is proven?
-4. Should the closed-loop critic (Phase-7) extension to include `actuals_drift` live in DemandSignalOS or PlanningOS?
-5. Does `inventory_policy/` warrant its own MAO consultant agent (`demand_signal_consultant`?) at launch, or wait until v0.2?
+| Version | Date | Notes |
+|---|---|---|
+| **v0** | 2026-06-08 | Founding draft on `feat/founding-design`. Three documents committed at root-commit `f4ab4b3` |
+| **v0.1** | 2026-06-08 | Two-round MAO triangulation applied. 16 Round-1 revisions + 7 Round-2 refinements integrated. All 5 v0 open questions resolved. Nixtla wrap adopted. Library-first sequencing locked. |

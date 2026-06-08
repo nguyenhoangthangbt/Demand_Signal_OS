@@ -4,7 +4,7 @@
 >
 > Every PR touching the boundary requires review against this document. When in doubt, default to OUT — pull only what Planning2Cash dogfooding actually needs.
 
-**Status:** v0 founding draft (2026-06-08) on branch `feat/founding-design`. Pending MAO triangulation + founder approval.
+**Status:** v0.1 (2026-06-08) on branch `feat/founding-design`. Round 1 + Round 2 MAO triangulation applied. All open questions resolved.
 
 ---
 
@@ -41,25 +41,27 @@ The mathematical core of "given a probabilistic forecast, what should I stock an
 
 | Capability | NEO F2S anchor (if any) | Reference |
 |---|---|---|
-| Safety stock calculation: `SS = z_α · σ_LTD` from forecast quantiles | (cross-cutting) | Silver-Pyke-Peterson; Zipkin ch. 6 |
-| Newsvendor (single-period, perishable) | — | Zipkin ch. 9 |
-| **(Q,R) continuous review** | — | Silver-Pyke-Peterson ch. 7 |
-| **(s,S) periodic review** | — | Zipkin ch. 9–10 |
-| Base-stock policy (lost-sales / backorder variants) | — | Zipkin ch. 6 |
-| **PIR generation** (Planned Independent Requirements time-series) | `F2S.PI.S082` Demand Management — Display PIRs (NEO subprocess reference) | NEO KB + Hyndman & Athanasopoulos |
-| Lead-time-demand convolution (forecast distribution × lead-time distribution) | — | Zipkin ch. 6 |
-| Stockout-censored estimation | — | Nahmias 1994; Cooper-Homem-de-Mello 2006 |
-| Service-level vs. cost tradeoff curves | — | Silver-Pyke-Peterson |
-| Multi-echelon safety-stock allocation (single-tier vs. allocation policy) | — | Graves & Willems 2000 |
+| Safety stock — **CSL mode**: `SS = z_α · σ_LTD` from forecast quantiles | (cross-cutting) | Silver, Pyke & Peterson (1998); Zipkin (2000) ch. 6 |
+| Safety stock — **fill-rate (UFR) mode**: `E[BO] / Q` | (cross-cutting) | Silver, Pyke & Peterson (1998) §7.4.2 |
+| Newsvendor (single-period, perishable) | — | Zipkin (2000) ch. 9 |
+| **(Q,R) continuous review** | — | Silver, Pyke & Peterson (1998) ch. 7 |
+| **(s,S) periodic review** — single-echelon | — | Zipkin (2000) ch. 9–10 |
+| **Per-echelon (s,S) with independent safety stock** *(multi-echelon, v0.1 IN per Round-2 clarification)* | — | Zipkin (2000) ch. 9–10 — each node runs its own (s,S) using its echelon's demand (downstream orders); no network-topology config needed |
+| Base-stock policy (lost-sales / backorder variants) | — | Zipkin (2000) ch. 6 |
+| **PIR generation** (Planned Independent Requirements time-series) | `F2S.PI.S082` Demand Management — Display PIRs (NEO subprocess reference) | NEO KB + Hyndman & Athanasopoulos (2021) |
+| Lead-time-demand convolution (forecast distribution × lead-time distribution) | — | Zipkin (2000) ch. 6 |
+| Stockout-censored estimation | — | Nahmias (1994), *Naval Research Logistics* 41(6), 739–757; **Huh & Rusmevichientong (2009)**, *Mathematics of Operations Research* 34(1), 103–123; **Sachs & Minner (2014)**, *International Journal of Production Economics* 149, 28–36 |
+| Service-level vs. cost tradeoff curves | — | Silver, Pyke & Peterson (1998) |
 
 ### 2.2 Hierarchical reconciliation
 
 | Capability | Reference |
 |---|---|
-| Bottom-up reconciliation across SKU → family → total | Hyndman & Athanasopoulos ch. 11 |
-| MinT (Minimum Trace) optimal combination | Wickramasuriya-Athanasopoulos-Hyndman 2019 |
-| Location-axis reconciliation (location → region → total) | Hyndman & Athanasopoulos ch. 11 |
-| Cross-axis (SKU × location) reconciliation | Hyndman & Athanasopoulos ch. 11 |
+| Bottom-up reconciliation across SKU → family → total *(v0.1 default)* | Hyndman & Athanasopoulos (2021) ch. 11.2 |
+| Location-axis reconciliation (location → region → total) | Hyndman & Athanasopoulos (2021) ch. 11 |
+| Cross-axis (SKU × location) reconciliation | Hyndman & Athanasopoulos (2021) ch. 11 |
+
+MinT with shrinkage is **OUT of v0.1** (deferred to v0.2 stretch — see CONSTITUTION §5 and §13).
 
 ### 2.3 What makes these IN
 
@@ -114,6 +116,15 @@ NEO carries **`F2S.PI.S082`** Demand Management — Display PIRs. PIR (Planned I
 
 DemandSignalOS emits PIRs as a structured artifact. How a customer's existing MRP / ERP consumes them is OUT.
 
+### 3.3 The "multi-echelon allocation" edge case — RESOLVED in v0.1
+
+Per Round 2 litreview clarification:
+
+- **IN v0.1** — Per-echelon (s,S) with independent safety stock per node. Each node runs its own policy using its echelon's demand (downstream orders). No network-topology config required; just per-node (s,S) parameters in YAML. Reference: Zipkin (2000) ch. 9–10.
+- **OUT to v0.2** — Graves-Willems optimal multi-echelon allocation. Joint optimization across echelons requires service-times, echelon holding costs, and transportation costs per arc — customer-specific network-topology config that begins to look like customization. Reference: Graves & Willems (2000), *M&SOM* 2(1), 68–83.
+
+The boundary between IN and OUT is "independent per-echelon" (IN, v0.1) vs "jointly optimal across echelons" (OUT, v0.2).
+
 ---
 
 ## 4. Boundary protocol — the handoff contract
@@ -132,21 +143,7 @@ When (and only when) operational F2S becomes necessary — either because Planni
 
 ### 4.3 What crosses the boundary
 
-The handoff artifact is the **`InventoryPolicy` decision bundle**:
-
-```python
-class InventoryPolicy(BaseModel):
-    sku_id: str
-    location_id: str
-    policy_type: Literal["newsvendor", "qr", "ss", "base_stock"]
-    parameters: dict  # policy-specific (Q, R, s, S, base_level, etc.)
-    safety_stock: float
-    service_level_target: float
-    reorder_triggers: list[ReorderTrigger]
-    forecast_provenance: ForecastProvenance  # which forecast bundle generated this
-    valid_from: datetime
-    valid_until: datetime
-```
+The handoff artifact is the **`InventoryPolicy` decision bundle** — see `contracts/CONTRACTS.md §1.4` for the canonical schema definition (discriminated union per `policy_type`, `service_level_type: csl|fill_rate`, optional reorder triggers, forecast provenance, validity window).
 
 `0NEO/F2S_os/` (when it exists) is responsible for:
 
@@ -161,7 +158,7 @@ class InventoryPolicy(BaseModel):
 
 If a feature has been requested **but no extraction trigger criterion is met**, the answer is: **document the request, do not build**.
 
-A `BACKLOG.md` file (future) tracks rejected / deferred operational F2S features so that when extraction is finally triggered, the backlog informs scope.
+A `BACKLOG.md` file (future, when first extraction trigger lands) tracks rejected / deferred operational F2S features so that when extraction is finally triggered, the backlog informs scope.
 
 ---
 
@@ -187,9 +184,11 @@ The boundary erodes silently. These five rules keep it sharp:
 
 ---
 
-## 7. Open questions for MAO triangulation
+## 7. Open questions — RESOLVED in v0.1
 
-1. Is `F2S.PI.S082` PIR generation properly classified as IN? The math is generalizable but PIR consumption is heavily ERP-specific — does emitting PIRs as an artifact (without consuming them) actually serve any downstream Planning2Cash consumer in v0.1?
-2. Is multi-echelon safety-stock allocation (Graves-Willems) v0.1 scope, or v0.2? It requires network-topology config which begins to look customer-specific.
-3. Should the `InventoryPolicy` handoff contract be versioned (v1, v2 evolution path) from day 1?
-4. Is `BACKLOG.md` for rejected operational F2S requests in scope for the founding draft, or premature?
+| Q | v0 question | v0.1 resolution |
+|---|---|---|
+| Q1 | Is PIR generation IN given ERP-specific consumption? | **IN as artifact, OUT as consumption.** DemandSignalOS emits PIR records (generalizable math); how a customer's ERP consumes them is OUT. See §3.2. |
+| Q2 | Multi-echelon safety-stock allocation v0.1 or v0.2? | **Split.** Per-echelon independent (s,S) = IN v0.1; Graves-Willems joint optimization = OUT to v0.2. See §3.3. |
+| Q3 | `InventoryPolicy` handoff contract versioned from day 1? | **Yes** — `schema_version: int` on every artifact per CONTRACTS §1.3 / §7. |
+| Q4 | `BACKLOG.md` for rejected operational F2S requests in scope for founding draft? | **Defer.** Premature for v0.1; the F2S_BOUNDARY itself is the backlog. Create when first extraction trigger lands. |
