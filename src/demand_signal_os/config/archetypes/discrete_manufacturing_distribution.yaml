@@ -1,0 +1,43 @@
+# v0.1 archetype config — Discrete Manufacturing Distribution
+# Per CONSTITUTION §4. Library-first design rule #3 (CONSTITUTION §8):
+# all customer variation is YAML, never code.
+
+archetype: discrete_mfg
+abc_classes:
+  A:
+    service_level: 0.99
+    service_level_type: csl
+    review_period_periods: 7   # weekly
+  B:
+    service_level: 0.97
+    service_level_type: csl
+    review_period_periods: 14
+  C:
+    service_level: 0.95
+    service_level_type: csl
+    review_period_periods: 28
+
+horizons:
+  operational:
+    period: day
+    horizon_length: 30
+    forecast_methods: [ets, croston_opt, tsb, sba, gbm]
+  tactical:
+    period: month
+    horizon_length: 6
+    forecast_methods: [ets, gbm]
+  strategic:
+    period: month
+    horizon_length: 18
+    forecast_methods: [ets]
+
+reconciliation:
+  method: bottom_up   # v0.1 default; mint_shrink is v0.2 stretch
+
+backtest:
+  windows_operational: 4
+  windows_tactical: 4
+  windows_strategic: 2
+  benchmarks: [naive_seasonal, ses, moving_average]
+  primary_metrics: [crps, smape, wrmsse]
+  secondary_metrics: [wis, pinball_q50, pinball_q90]
