@@ -8,7 +8,7 @@ SimOS can sample without adapter code.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel
 
@@ -38,7 +38,7 @@ class ProbabilisticDistribution(BaseModel):
         "uniform",
         "triangular",
     ]
-    params: dict
+    params: dict[str, Any]
     support: tuple[float, float] | None = None
 
 

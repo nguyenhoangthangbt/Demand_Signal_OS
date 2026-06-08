@@ -6,7 +6,7 @@ This is the test that proves CONTRACTS §5.2 holds.
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 
 from demand_signal_os.forecasting.reconciliation import reconcile_bottom_up
 from demand_signal_os.ops_schemas import (
@@ -35,8 +35,8 @@ def _bundle(sku: str, q05: float, q50: float, q95: float, mean: float) -> Foreca
             commit_sha="dev",
             seed=42,
             feature_set_hash="x",
-            data_cut_timestamp=datetime(2026, 1, 1, tzinfo=timezone.utc),
-            produced_at=datetime(2026, 1, 2, tzinfo=timezone.utc),
+            data_cut_timestamp=datetime(2026, 1, 1, tzinfo=UTC),
+            produced_at=datetime(2026, 1, 2, tzinfo=UTC),
         ),
     )
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 
 import pytest
 
@@ -23,15 +23,15 @@ def _request(history: list[float]) -> ForecastRequest:
         ],
         horizon_label="operational",
         seed=42,
-        data_cut_timestamp=datetime(2026, 2, 1, tzinfo=timezone.utc),
+        data_cut_timestamp=datetime(2026, 2, 1, tzinfo=UTC),
     )
 
 
 def test_gbm_produces_valid_bundle() -> None:
-    from demand_signal_os.forecasting.gbm import GBMQuantileMethod
-
     # 60 days of synthetic seasonal data
     import math
+
+    from demand_signal_os.forecasting.gbm import GBMQuantileMethod
     history = [10 + 3 * math.sin(2 * math.pi * i / 7) + (i % 5) for i in range(60)]
     method = GBMQuantileMethod()
     bundle = method.fit_predict(_request(history))
@@ -41,9 +41,9 @@ def test_gbm_produces_valid_bundle() -> None:
 
 def test_gbm_quantiles_are_monotone() -> None:
     """Per the isotonic projection in gbm.py — quantiles must be sorted."""
-    from demand_signal_os.forecasting.gbm import GBMQuantileMethod
-
     import math
+
+    from demand_signal_os.forecasting.gbm import GBMQuantileMethod
     history = [10 + 3 * math.sin(2 * math.pi * i / 7) + (i % 3) for i in range(60)]
     bundle = GBMQuantileMethod().fit_predict(_request(history))
     q = bundle.quantiles
@@ -56,15 +56,16 @@ def test_gbm_short_history_raises() -> None:
     config = GBMConfig(lags=(1, 2, 3, 7), rolling_window=7)
     method = GBMQuantileMethod(config=config)
     # min_start = max(7, 7) = 7; history of 8 has only 1 training row → still
-    # fails LGBM's min_data_in_leaf=5.
-    with pytest.raises(Exception):
+    # fails LGBM's min_data_in_leaf=5. _build_features raises ValueError;
+    # if the build succeeds and LGBM raises later, that's also acceptable.
+    with pytest.raises((ValueError, RuntimeError)):
         method.fit_predict(_request([1.0, 2.0, 3.0]))
 
 
 def test_gbm_provenance_carries_seed() -> None:
-    from demand_signal_os.forecasting.gbm import GBMQuantileMethod
-
     import math
+
+    from demand_signal_os.forecasting.gbm import GBMQuantileMethod
     history = [10 + 3 * math.sin(2 * math.pi * i / 7) + (i % 5) for i in range(60)]
     bundle = GBMQuantileMethod().fit_predict(_request(history))
     assert bundle.provenance.seed == 42

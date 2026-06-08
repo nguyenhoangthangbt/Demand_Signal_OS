@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from demand_signal_os.ops_schemas import ForecastBundle, Quantiles
+from demand_signal_os.ops_schemas import ForecastBundle, ForecastProvenance, Quantiles
 
 
 def _sum_quantiles(qs: list[Quantiles]) -> Quantiles:
@@ -26,7 +26,7 @@ def _sum_quantiles(qs: list[Quantiles]) -> Quantiles:
 
 def reconcile_bottom_up(
     bottom_bundles: Iterable[ForecastBundle],
-    aggregate_provenance,
+    aggregate_provenance: ForecastProvenance,
     aggregate_sku_id: str,
     aggregate_location_id: str,
 ) -> ForecastBundle:

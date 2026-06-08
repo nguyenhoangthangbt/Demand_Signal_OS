@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 
 import pytest
 
@@ -26,7 +26,7 @@ def _request(history: list[float]) -> ForecastRequest:
         ],
         horizon_label="operational",
         seed=42,
-        data_cut_timestamp=datetime(2026, 2, 1, tzinfo=timezone.utc),
+        data_cut_timestamp=datetime(2026, 2, 1, tzinfo=UTC),
     )
 
 

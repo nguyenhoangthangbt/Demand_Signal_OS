@@ -19,11 +19,13 @@ The promotion itself is mechanical: move the 6 modules + rename imports
 across all consumers in one PR. No API change.
 """
 
+from demand_signal_os.ops_schemas.accuracy import ForecastAccuracy
 from demand_signal_os.ops_schemas.demand import (
     CensoringFlag,
     DemandActual,
     DemandSignal,
 )
+from demand_signal_os.ops_schemas.fallback import ForecastFallbackStrategy
 from demand_signal_os.ops_schemas.forecast import (
     ForecastBundle,
     ForecastProvenance,
@@ -31,23 +33,21 @@ from demand_signal_os.ops_schemas.forecast import (
     Quantiles,
 )
 from demand_signal_os.ops_schemas.hierarchy import (
+    SKU,
     ArchetypeTag,
     Location,
-    SKU,
     TimeBucket,
 )
 from demand_signal_os.ops_schemas.policy import (
+    PIR,
     BaseStockParameters,
     InventoryPolicy,
     NewsvendorParameters,
     PolicyParameters,
-    PIR,
     QRParameters,
     ReorderTrigger,
     SSParameters,
 )
-from demand_signal_os.ops_schemas.accuracy import ForecastAccuracy
-from demand_signal_os.ops_schemas.fallback import ForecastFallbackStrategy
 
 __all__ = [
     "ArchetypeTag",

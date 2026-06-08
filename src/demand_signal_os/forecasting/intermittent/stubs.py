@@ -10,7 +10,6 @@ from __future__ import annotations
 import hashlib
 import uuid
 from datetime import datetime
-from typing import Literal
 
 import numpy as np
 

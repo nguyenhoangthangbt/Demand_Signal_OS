@@ -10,11 +10,11 @@ from __future__ import annotations
 
 import math
 
-from demand_signal_os.ops_schemas import Quantiles
 from demand_signal_os.inventory_policy.safety_stock import (
     safety_stock_csl,
     safety_stock_fill_rate,
 )
+from demand_signal_os.ops_schemas import Quantiles
 
 
 def eoq(annual_demand: float, order_cost: float, holding_cost_per_unit: float) -> float:

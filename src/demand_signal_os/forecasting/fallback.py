@@ -12,13 +12,18 @@ from __future__ import annotations
 from demand_signal_os.ops_schemas import ForecastFallbackStrategy
 
 
-class ForecastUnavailable(Exception):
+class ForecastUnavailableError(Exception):
     """Raised when the engine cannot produce a forecast and no fallback applies."""
 
     def __init__(self, strategy: ForecastFallbackStrategy, reason: str):
         self.strategy = strategy
         self.reason = reason
         super().__init__(f"forecast unavailable [{strategy.strategy_type}]: {reason}")
+
+
+# Backward-compat alias — keep the shorter name for callers prior to the
+# 2026-06-08 N818 rename.
+ForecastUnavailable = ForecastUnavailableError
 
 
 def apply_fallback(
@@ -28,13 +33,14 @@ def apply_fallback(
 ) -> None:
     """Apply a v0.1 fallback strategy.
 
-    v0.1 implements only `reject` — raises `ForecastUnavailable`. All other
-    fallback values are valid in the schema but raise NotImplementedError
-    until v0.1.5+ implementations land. This keeps the contract honest:
-    callers must explicitly handle each case, not silently fall back.
+    v0.1 implements only `reject` — raises `ForecastUnavailableError`. All
+    other fallback values are valid in the schema but raise
+    NotImplementedError until v0.1.5+ implementations land. This keeps the
+    contract honest: callers must explicitly handle each case, not
+    silently fall back.
     """
     if strategy.fallback == "reject":
-        raise ForecastUnavailable(strategy, reason)
+        raise ForecastUnavailableError(strategy, reason)
     raise NotImplementedError(
         f"fallback '{strategy.fallback}' not implemented in v0.1 — "
         f"use 'reject' or wait for v0.1.5+ (see CONTRACTS §8)"

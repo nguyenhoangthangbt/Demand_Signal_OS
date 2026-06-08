@@ -9,7 +9,7 @@ M5-aligned rolling-origin evaluation:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Literal
 
 import numpy as np
@@ -91,7 +91,7 @@ def make_windows(
                 window_index=w,
                 train_size=train_end,
                 horizon_size=horizon_size,
-                data_cut_timestamp=datetime.now(timezone.utc),
+                data_cut_timestamp=datetime.now(UTC),
             )
         )
     return list(reversed(windows))  # chronological order

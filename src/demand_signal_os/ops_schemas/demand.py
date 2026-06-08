@@ -7,15 +7,15 @@ CensoringFlag is the load-bearing field per the three-tier adapter strategy
 from __future__ import annotations
 
 from datetime import datetime
-from enum import Enum
-from typing import Literal
+from enum import StrEnum
+from typing import Any, Literal
 
 from pydantic import BaseModel
 
 from demand_signal_os.ops_schemas.hierarchy import TimeBucket
 
 
-class CensoringFlag(str, Enum):
+class CensoringFlag(StrEnum):
     """Status of a DemandActual's units_sold value.
 
     OBSERVED — units_sold > 0 with no stockout; the value is real demand.
@@ -59,6 +59,6 @@ class DemandSignal(BaseModel):
         "macro",
         "research_covariate",
     ]
-    value: float | str | dict
+    value: float | str | dict[str, Any]
     source_system: str
     provenance_id: str

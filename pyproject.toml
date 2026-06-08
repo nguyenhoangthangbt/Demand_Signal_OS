@@ -45,9 +45,34 @@ python_version = "3.11"
 strict = true
 plugins = ["pydantic.mypy"]
 
+# Third-party libraries without type stubs we wrap (Nixtla, LightGBM, scipy).
+# Stubs are out-of-scope for v0.1; revisit when the libraries publish their own.
+[[tool.mypy.overrides]]
+module = [
+    "statsforecast.*",
+    "hierarchicalforecast.*",
+    "utilsforecast.*",
+    "lightgbm.*",
+    "scipy.*",
+]
+ignore_missing_imports = true
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "UP", "B", "SIM"]
+
+# Per-file ignores — canonical math notation cannot be lower-cased without
+# diverging from textbook references (Silver-Pyke-Peterson, Zipkin, sklearn).
+[tool.ruff.lint.per-file-ignores]
+# Inventory policy variables — Q/R/S/s are textbook canonical (Silver-Pyke-Peterson
+# §7; Zipkin ch. 9-10). Renaming to lowercase would lose the literature anchor.
+"src/demand_signal_os/inventory_policy/*.py" = ["N803", "N806"]
+# GBM uses sklearn-canonical X_train / X_pred matrices.
+"src/demand_signal_os/forecasting/gbm.py" = ["N806"]
+# WIS formula uses K = number of intervals (Bracher et al. 2021).
+"src/demand_signal_os/backtest/metrics.py" = ["N806"]
+# Integration tests exercise (Q, R) policy returns — keep textbook names.
+"tests/integration/*.py" = ["N806"]

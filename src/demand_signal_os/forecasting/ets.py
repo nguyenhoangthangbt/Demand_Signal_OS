@@ -59,8 +59,9 @@ class ETSMethod:
         mean_path = np.asarray(result["mean"], dtype=float)
         lo80 = np.asarray(result["lo-80"], dtype=float)
         hi80 = np.asarray(result["hi-80"], dtype=float)
-        lo90 = np.asarray(result["lo-90"], dtype=float)
-        hi90 = np.asarray(result["hi-90"], dtype=float)
+        # 90% intervals available too but unused for now — sigma inferred
+        # from the 80% band is sufficient. Re-enable when emitting a
+        # second confidence-level family on the bundle.
 
         # Build a synthetic sample distribution from the parametric intervals
         # so we can emit canonical quantiles. ETS innovations are

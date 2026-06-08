@@ -7,16 +7,16 @@ passing — that's the cost of breaking the contract.
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 
 import pytest
 
 from demand_signal_os.ops_schemas import (
-    ArchetypeTag,
+    PIR,
+    SKU,
     BaseStockParameters,
     CensoringFlag,
     DemandActual,
-    DemandSignal,
     ForecastAccuracy,
     ForecastBundle,
     ForecastFallbackStrategy,
@@ -24,12 +24,10 @@ from demand_signal_os.ops_schemas import (
     InventoryPolicy,
     Location,
     NewsvendorParameters,
-    PIR,
     ProbabilisticDistribution,
     QRParameters,
     Quantiles,
     ReorderTrigger,
-    SKU,
     SSParameters,
     TimeBucket,
 )
@@ -46,8 +44,8 @@ def _provenance() -> ForecastProvenance:
         commit_sha="abc123",
         seed=42,
         feature_set_hash="deadbeef",
-        data_cut_timestamp=datetime(2026, 1, 1, tzinfo=timezone.utc),
-        produced_at=datetime(2026, 1, 2, tzinfo=timezone.utc),
+        data_cut_timestamp=datetime(2026, 1, 1, tzinfo=UTC),
+        produced_at=datetime(2026, 1, 2, tzinfo=UTC),
     )
 
 
@@ -74,7 +72,7 @@ def test_demand_actual_roundtrip_all_censoring_flags() -> None:
             units_sold=0.0 if flag != CensoringFlag.UNKNOWN else 5.0,
             censoring=flag,
             source_system="o2c",
-            recorded_at=datetime(2026, 1, 2, tzinfo=timezone.utc),
+            recorded_at=datetime(2026, 1, 2, tzinfo=UTC),
         )
         assert DemandActual.model_validate_json(actual.model_dump_json()) == actual
 
@@ -144,8 +142,8 @@ def test_inventory_policy_discriminated_union(params) -> None:  # type: ignore[n
             )
         ],
         forecast_provenance=_provenance(),
-        valid_from=datetime(2026, 1, 1, tzinfo=timezone.utc),
-        valid_until=datetime(2026, 2, 1, tzinfo=timezone.utc),
+        valid_from=datetime(2026, 1, 1, tzinfo=UTC),
+        valid_until=datetime(2026, 2, 1, tzinfo=UTC),
     )
     restored = InventoryPolicy.model_validate_json(policy.model_dump_json())
     assert restored == policy
@@ -163,8 +161,8 @@ def test_inventory_policy_fill_rate_mode() -> None:
         service_level_type="fill_rate",
         reorder_triggers=[],
         forecast_provenance=_provenance(),
-        valid_from=datetime(2026, 1, 1, tzinfo=timezone.utc),
-        valid_until=datetime(2026, 2, 1, tzinfo=timezone.utc),
+        valid_from=datetime(2026, 1, 1, tzinfo=UTC),
+        valid_until=datetime(2026, 2, 1, tzinfo=UTC),
     )
     assert policy.service_level_type == "fill_rate"
 

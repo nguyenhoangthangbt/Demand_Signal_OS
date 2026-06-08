@@ -14,7 +14,7 @@ class LeadTimeDistribution:
     samples: np.ndarray  # for empirical sampling
 
     @classmethod
-    def from_observations(cls, observations: list[float]) -> "LeadTimeDistribution":
+    def from_observations(cls, observations: list[float]) -> LeadTimeDistribution:
         if not observations:
             raise ValueError("at least one observation required")
         arr = np.asarray(observations, dtype=float)

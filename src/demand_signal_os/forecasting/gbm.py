@@ -129,7 +129,7 @@ class GBMQuantileMethod:
         for i in range(1, len(vals)):
             if vals[i] < vals[i - 1]:
                 vals[i] = vals[i - 1]
-        preds = dict(zip(sorted_alphas, vals))
+        preds = dict(zip(sorted_alphas, vals, strict=True))
 
         q = Quantiles(
             q05=preds[0.05], q10=preds[0.10], q25=preds[0.25], q50=preds[0.50],

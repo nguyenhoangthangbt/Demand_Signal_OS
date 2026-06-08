@@ -8,7 +8,7 @@ swapping backends is a config change, not a code change.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol
 
 import numpy as np
 from pydantic import BaseModel
@@ -31,7 +31,7 @@ class ForecastRequest(BaseModel):
     horizon_label: Literal["operational", "tactical", "strategic"]
     seed: int
     data_cut_timestamp: datetime
-    method_config: dict = {}
+    method_config: dict[str, Any] = {}
 
 
 class ForecastMethod(Protocol):

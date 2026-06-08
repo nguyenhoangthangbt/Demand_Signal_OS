@@ -15,7 +15,7 @@ from collections.abc import Callable
 
 import numpy as np
 
-from demand_signal_os.ops_schemas import ForecastBundle, Quantiles
+from demand_signal_os.ops_schemas import ForecastBundle
 
 
 class DemandForecastDistribution:

@@ -7,7 +7,7 @@ seam composes correctly when the backend is available.
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 
 import pytest
 
@@ -18,7 +18,6 @@ from demand_signal_os.inventory_policy.qr import qr_policy
 from demand_signal_os.ops_schemas import (
     ForecastBundle,
     ForecastProvenance,
-    ProbabilisticDistribution,
     Quantiles,
     TimeBucket,
 )
@@ -43,7 +42,7 @@ def _request() -> ForecastRequest:
         horizon_buckets=[_bucket()],
         horizon_label="operational",
         seed=42,
-        data_cut_timestamp=datetime(2026, 2, 1, tzinfo=timezone.utc),
+        data_cut_timestamp=datetime(2026, 2, 1, tzinfo=UTC),
     )
 
 
@@ -83,8 +82,8 @@ def test_forecast_to_qr_policy_handoff() -> None:
             commit_sha="dev",
             seed=42,
             feature_set_hash="x",
-            data_cut_timestamp=datetime(2026, 2, 1, tzinfo=timezone.utc),
-            produced_at=datetime(2026, 2, 2, tzinfo=timezone.utc),
+            data_cut_timestamp=datetime(2026, 2, 1, tzinfo=UTC),
+            produced_at=datetime(2026, 2, 2, tzinfo=UTC),
         ),
     )
 
@@ -119,8 +118,8 @@ def test_forecast_to_pir_handoff() -> None:
             commit_sha="dev",
             seed=42,
             feature_set_hash="x",
-            data_cut_timestamp=datetime(2026, 2, 1, tzinfo=timezone.utc),
-            produced_at=datetime(2026, 2, 2, tzinfo=timezone.utc),
+            data_cut_timestamp=datetime(2026, 2, 1, tzinfo=UTC),
+            produced_at=datetime(2026, 2, 2, tzinfo=UTC),
         ),
     )
     pir = pir_from_forecast(bundle)  # default: no quantiles (D5)
@@ -148,8 +147,8 @@ def test_demand_forecast_distribution_samples_within_quantile_band() -> None:
             commit_sha="dev",
             seed=42,
             feature_set_hash="x",
-            data_cut_timestamp=datetime(2026, 2, 1, tzinfo=timezone.utc),
-            produced_at=datetime(2026, 2, 2, tzinfo=timezone.utc),
+            data_cut_timestamp=datetime(2026, 2, 1, tzinfo=UTC),
+            produced_at=datetime(2026, 2, 2, tzinfo=UTC),
         ),
     )
     dist = DemandForecastDistribution(bundle, seed=123)

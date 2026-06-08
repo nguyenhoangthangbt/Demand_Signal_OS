@@ -7,7 +7,7 @@ v0.1 implements only the `reject` strategy.
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel
 
@@ -28,4 +28,4 @@ class ForecastFallbackStrategy(BaseModel):
         "empirical_only",
         "reject",
     ]
-    config: dict = {}
+    config: dict[str, Any] = {}

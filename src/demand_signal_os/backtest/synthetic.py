@@ -11,7 +11,7 @@ backtested before any real-customer data exists.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 
 import numpy as np
 
@@ -95,7 +95,7 @@ def generate(
             censoring=CensoringFlag.UNKNOWN,
             source_system="synthetic",
             recorded_at=datetime.combine(bucket.end, datetime.min.time()).replace(
-                tzinfo=timezone.utc
+                tzinfo=UTC
             ),
         )
         snapshot = InventorySnapshot(
