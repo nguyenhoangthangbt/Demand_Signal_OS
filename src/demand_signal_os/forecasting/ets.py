@@ -30,13 +30,29 @@ from demand_signal_os.ops_schemas import (
 
 
 class ETSMethod:
-    """AutoETS state-space wrapper. Implements ForecastMethod protocol."""
+    """AutoETS state-space wrapper. Implements ForecastMethod protocol.
+
+    Optional ``min_quantile_spread`` enforces a band-width floor on the
+    emitted quantiles per the D5 UAT-1b finding (2026-06-08). On
+    near-noiseless input, ETS correctly infers zero innovation variance
+    and the band collapses to ~3e-9 — statistically right but breaks
+    downstream safety_stock / drift detection. When set, the floor is
+    applied symmetrically around q50 (q50 preserved exactly). See
+    ``forecasting/band_guard.py``.
+    """
 
     method_id: str = "ets"
 
-    def __init__(self, *, season_length: int = 12, model: str = "ZZZ"):
+    def __init__(
+        self,
+        *,
+        season_length: int = 12,
+        model: str = "ZZZ",
+        min_quantile_spread: float | None = None,
+    ):
         self.season_length = season_length
         self.model = model
+        self.min_quantile_spread = min_quantile_spread
 
     def fit_predict(self, request: ForecastRequest) -> ForecastBundle:
         # Import locally so the package imports even if statsforecast isn't
@@ -74,6 +90,12 @@ class ETSMethod:
         rng = np.random.default_rng(request.seed)
         samples = rng.normal(loc=mu, scale=sigma, size=10_000)
         q = quantiles_from_samples(samples)
+        quantiles = Quantiles(**q)
+
+        # Apply minimum band-width guard (D5 UAT-1b — 2026-06-08).
+        if self.min_quantile_spread is not None:
+            from demand_signal_os.forecasting.band_guard import apply_min_band_floor
+            quantiles = apply_min_band_floor(quantiles, self.min_quantile_spread)
 
         feature_hash = hashlib.sha256(history.tobytes()).hexdigest()[:16]
         provenance = ForecastProvenance(
@@ -91,7 +113,7 @@ class ETSMethod:
             location_id=request.location_id,
             bucket=request.horizon_buckets[0],
             horizon_label=request.horizon_label,
-            quantiles=Quantiles(**q),
+            quantiles=quantiles,
             distribution=ProbabilisticDistribution(
                 family="normal",
                 params={"mean": mu, "std": sigma},
