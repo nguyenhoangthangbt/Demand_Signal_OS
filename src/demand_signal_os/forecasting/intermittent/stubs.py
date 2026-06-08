@@ -31,9 +31,15 @@ def _bundle_from_samples(
     request: ForecastRequest,
     method_id: str,
     model_id: str,
+    *,
+    min_quantile_spread: float | None = None,
 ) -> ForecastBundle:
     history = np.asarray(request.history, dtype=float)
     q = quantiles_from_samples(samples)
+    quantiles = Quantiles(**q)
+    if min_quantile_spread is not None:
+        from demand_signal_os.forecasting.band_guard import apply_min_band_floor
+        quantiles = apply_min_band_floor(quantiles, min_quantile_spread)
     mu = float(np.mean(samples))
     sigma = float(np.std(samples))
     feature_hash = hashlib.sha256(history.tobytes()).hexdigest()[:16]
@@ -51,7 +57,7 @@ def _bundle_from_samples(
         location_id=request.location_id,
         bucket=request.horizon_buckets[0],
         horizon_label=request.horizon_label,
-        quantiles=Quantiles(**q),
+        quantiles=quantiles,
         distribution=ProbabilisticDistribution(
             family="normal", params={"mean": mu, "std": max(sigma, 1e-9)}
         ),
@@ -66,6 +72,9 @@ class CrostonOptimizedMethod:
 
     method_id: str = "croston_opt"
 
+    def __init__(self, *, min_quantile_spread: float | None = None):
+        self.min_quantile_spread = min_quantile_spread
+
     def fit_predict(self, request: ForecastRequest) -> ForecastBundle:
         from statsforecast.models import CrostonOptimized
 
@@ -79,7 +88,10 @@ class CrostonOptimizedMethod:
         rng = np.random.default_rng(request.seed)
         sigma = float(np.std(history)) or 1.0
         samples = rng.normal(loc=mu, scale=sigma, size=10_000)
-        return _bundle_from_samples(samples, request, self.method_id, "croston_opt")
+        return _bundle_from_samples(
+            samples, request, self.method_id, "croston_opt",
+            min_quantile_spread=self.min_quantile_spread,
+        )
 
 
 class TSBMethod:
@@ -87,9 +99,16 @@ class TSBMethod:
 
     method_id: str = "tsb"
 
-    def __init__(self, *, alpha_d: float = 0.1, alpha_p: float = 0.1):
+    def __init__(
+        self,
+        *,
+        alpha_d: float = 0.1,
+        alpha_p: float = 0.1,
+        min_quantile_spread: float | None = None,
+    ):
         self.alpha_d = alpha_d
         self.alpha_p = alpha_p
+        self.min_quantile_spread = min_quantile_spread
 
     def fit_predict(self, request: ForecastRequest) -> ForecastBundle:
         from statsforecast.models import TSB
@@ -103,13 +122,19 @@ class TSBMethod:
         rng = np.random.default_rng(request.seed)
         sigma = float(np.std(history)) or 1.0
         samples = rng.normal(loc=mu, scale=sigma, size=10_000)
-        return _bundle_from_samples(samples, request, self.method_id, "tsb")
+        return _bundle_from_samples(
+            samples, request, self.method_id, "tsb",
+            min_quantile_spread=self.min_quantile_spread,
+        )
 
 
 class CrostonSBAMethod:
     """Croston with Syntetos-Boylan 0.95 debiasing factor (Syntetos-Boylan 2005)."""
 
     method_id: str = "sba"
+
+    def __init__(self, *, min_quantile_spread: float | None = None):
+        self.min_quantile_spread = min_quantile_spread
 
     def fit_predict(self, request: ForecastRequest) -> ForecastBundle:
         from statsforecast.models import CrostonSBA
@@ -123,7 +148,10 @@ class CrostonSBAMethod:
         rng = np.random.default_rng(request.seed)
         sigma = float(np.std(history)) or 1.0
         samples = rng.normal(loc=mu, scale=sigma, size=10_000)
-        return _bundle_from_samples(samples, request, self.method_id, "sba")
+        return _bundle_from_samples(
+            samples, request, self.method_id, "sba",
+            min_quantile_spread=self.min_quantile_spread,
+        )
 
 
 # Protocol-conformance checks at import time

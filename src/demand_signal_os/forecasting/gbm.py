@@ -95,8 +95,14 @@ class GBMQuantileMethod:
 
     method_id: str = "gbm"
 
-    def __init__(self, config: GBMConfig | None = None):
+    def __init__(
+        self,
+        config: GBMConfig | None = None,
+        *,
+        min_quantile_spread: float | None = None,
+    ):
         self.config = config or GBMConfig()
+        self.min_quantile_spread = min_quantile_spread
 
     def fit_predict(self, request: ForecastRequest) -> ForecastBundle:
         # Local import keeps lightgbm out of the import path for users
@@ -135,6 +141,9 @@ class GBMQuantileMethod:
             q05=preds[0.05], q10=preds[0.10], q25=preds[0.25], q50=preds[0.50],
             q75=preds[0.75], q90=preds[0.90], q95=preds[0.95],
         )
+        if self.min_quantile_spread is not None:
+            from demand_signal_os.forecasting.band_guard import apply_min_band_floor
+            q = apply_min_band_floor(q, self.min_quantile_spread)
         provenance = ForecastProvenance(
             forecast_bundle_id=str(uuid.uuid4()),
             model_id=f"gbm-lgb-n{self.config.n_estimators}",

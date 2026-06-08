@@ -11,6 +11,11 @@ requires-python = ">=3.11"
 license = {text = "Proprietary"}
 
 dependencies = [
+    # Promoted shared boundary types (platforms_os/packages/ops_schemas).
+    # Install order: `pip install -e platforms_os/packages/ops_schemas`
+    # before `pip install -e Demand_Signal_OS`. Promoted 2026-06-08 per
+    # CONSTITUTION §8.
+    "ops_schemas",
     # Pinned per CONSTITUTION §10 Nixtla wrap decision (Apache 2.0)
     "statsforecast==2.0.3",
     "hierarchicalforecast==1.5.1",
@@ -35,6 +40,9 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"demand_signal_os" = ["py.typed"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
