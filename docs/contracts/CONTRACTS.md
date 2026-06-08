@@ -10,7 +10,7 @@
 
 ## 0. Reading map
 
-- §1 — Type primitives (the `platforms_os/ops_schemas/` shared package surface)
+- §1 — Type primitives (nested at `demand_signal_os.ops_schemas` for v0.1; promotion target `platforms_os/packages/ops_schemas/` — see CONSTITUTION §8)
 - §2 — Feeder contracts (signals INTO DemandSignalOS)
 - §3 — Consumer contracts (signals OUT of DemandSignalOS)
 - §4 — Internal contract: forecasting → inventory_policy (with `estimation/` sibling)
@@ -25,9 +25,15 @@
 
 ---
 
-## 1. Type primitives — `platforms_os/ops_schemas/` shared package
+## 1. Type primitives — shared package surface
 
-Per S1 + R-2 promotion, all types below live in the **top-level shared package** `platforms_os/ops_schemas/`, NOT inside `Demand_Signal_OS/`. SimOS, PlanningOS, Order2Cash_os import from this shared package directly. This avoids any reverse dependency where SimOS would import from DemandSignalOS.
+**Location policy** (per CONSTITUTION §8):
+
+- **v0.1 (now):** types live nested inside this repo as `demand_signal_os.ops_schemas`. No external consumer imports them yet; YAGNI rules.
+- **Promotion trigger:** first SimOS- or PlanningOS-side import of these types. The transitive-dependency cost (scipy / lightgbm / pandas) on the consumer is the real signal, not the "reverse dependency" aesthetic.
+- **Promotion target:** `platforms_os/packages/ops_schemas/`. Shared infrastructure lives under `packages/`, distinct from platforms at the top level.
+
+The schema definitions below are stable across the move — the promotion is mechanical (relocate + rename imports). When promoted, SimOS / PlanningOS / Order2Cash_os import directly from `platforms_os.packages.ops_schemas` without depending on the `demand_signal_os` distribution.
 
 Every top-level artifact carries `schema_version: int` for evolution (per D4).
 
@@ -435,7 +441,7 @@ Both `forecasting/` and `inventory_policy/` MAY import from `estimation/`. `esti
 | `forecasting/` → `inventory_policy/` is FORBIDDEN | PR-review + import-check |
 | `estimation/` → `forecasting/` or `inventory_policy/` is FORBIDDEN | PR-review + import-check |
 
-The only allowed import from `forecasting/` into `inventory_policy/` is the `ForecastBundle` Pydantic model — which lives in `platforms_os/ops_schemas/forecast.py`, NOT inside `forecasting/<method>/`.
+The only allowed import from `forecasting/` into `inventory_policy/` is the `ForecastBundle` Pydantic model — which lives in `ops_schemas/forecast.py` (nested for v0.1; promotion target `platforms_os/packages/ops_schemas/forecast.py`), NOT inside `forecasting/<method>/`.
 
 ---
 

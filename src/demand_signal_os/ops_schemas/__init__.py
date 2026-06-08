@@ -1,11 +1,22 @@
 """ops_schemas — the boundary language of the Planning2Cash loop.
 
-NOTE: per CONSTITUTION §8 + CONTRACTS §1, this package is intended to be
-PROMOTED to a top-level shared package at `platforms_os/ops_schemas/`
-once coordinated with the sibling session working in that repo. Until
-then, it lives here and other platforms import as
-`demand_signal_os.ops_schemas`. The promotion is mechanical (move +
-update import paths) — no API change.
+LOCATION POLICY (per CONSTITUTION §8 + CONTRACTS §1):
+
+- **v0.1 (now):** nested here under `demand_signal_os.ops_schemas`.
+  No external consumer imports these types yet — YAGNI rules.
+
+- **Promotion trigger:** the first SimOS-side or PlanningOS-side line
+  that does `from demand_signal_os.ops_schemas import ...`. At that
+  point the transitive-dependency cost (scipy / lightgbm / pandas) lands
+  on the consumer's environment for no business-logic reason — that's
+  the signal to extract.
+
+- **Promotion target:** `platforms_os/packages/ops_schemas/` (NOT
+  `platforms_os/ops_schemas/` — shared infrastructure lives under
+  `packages/`, distinct from platforms at the top level).
+
+The promotion itself is mechanical: move the 6 modules + rename imports
+across all consumers in one PR. No API change.
 """
 
 from demand_signal_os.ops_schemas.demand import (

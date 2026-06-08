@@ -151,14 +151,15 @@ See `contracts/CONTRACTS.md` for the full schema specification. Summary:
 
 ```
 platforms_os/
-  ops_schemas/                ← SHARED top-level package (S1 — promoted from inside this repo)
-    __init__.py
-    demand.py                 ← SKU, Location, TimeBucket, DemandActual, CensoringFlag, DemandSignal
-    forecast.py               ← ForecastBundle, Quantiles, ProbabilisticDistribution, ForecastProvenance
-    policy.py                 ← InventoryPolicy (discriminated union), ReorderTrigger, PIR
-    accuracy.py               ← ForecastAccuracy
-    hierarchy.py              ← SKU/Location hierarchy types
-    fallback.py               ← ForecastFallbackStrategy
+  packages/                   ← shared infrastructure (distinct from platforms)
+    ops_schemas/              ← PROMOTION TARGET (S1 — see promotion policy below)
+      __init__.py
+      demand.py               ← SKU, Location, TimeBucket, DemandActual, CensoringFlag, DemandSignal
+      forecast.py             ← ForecastBundle, Quantiles, ProbabilisticDistribution, ForecastProvenance
+      policy.py               ← InventoryPolicy (discriminated union), ReorderTrigger, PIR
+      accuracy.py             ← ForecastAccuracy
+      hierarchy.py            ← SKU/Location hierarchy types
+      fallback.py             ← ForecastFallbackStrategy
   Demand_Signal_OS/           ← this repo
     docs/
       CONSTITUTION.md         ← this file
@@ -194,6 +195,22 @@ platforms_os/
         discrete_manufacturing_distribution.yaml
     tests/
 ```
+
+**`ops_schemas` promotion policy (YAGNI-deferred):**
+
+- **v0.1 default:** `ops_schemas/` lives nested inside this repo as
+  `demand_signal_os.ops_schemas`. No external consumer imports these
+  types yet, so the nested form has zero cost.
+- **Promotion trigger:** the first SimOS-side or PlanningOS-side line
+  that does `from demand_signal_os.ops_schemas import ...`. At that
+  point the transitive-dependency cost (scipy / lightgbm / pandas)
+  lands on the consumer for no business-logic reason — that's the
+  signal to extract.
+- **Promotion target:** `platforms_os/packages/ops_schemas/`. Shared
+  infrastructure lives under `packages/`, distinct from platforms
+  (`simulation_os/`, `Planning_os/`, etc.) at the top level.
+- **Promotion mechanics:** move the 6 modules + rename imports across
+  all consumers in one PR. No API change. Estimated ~30 minutes.
 
 **Library-first design rules (v0.1)** — load-bearing per R-5 from architect Round 2. These rules ensure v0.1.5 API extraction is a *deployment*, not a *rewrite*:
 
@@ -271,7 +288,9 @@ These are the rules that protect the engine from becoming a customization swamp.
 
 ```
 Phase 1 — DemandSignalOS v0.1 library (1–2 weeks)
-  ├─ Create platforms_os/ops_schemas/ shared package
+  ├─ ops_schemas nested at demand_signal_os.ops_schemas
+  │   (promotion to platforms_os/packages/ops_schemas/ deferred
+  │    until first SimOS / PlanningOS import — see §8 policy)
   ├─ forecasting/ — wrap Nixtla (ETS, CrostonOptimized, TSB, CrostonSBA, GBM)
   ├─ inventory_policy/ — custom (newsvendor, QR, sS, base-stock, PIR, safety-stock CSL + fill-rate)
   ├─ estimation/ — lead-time + censoring three-tier adapter
@@ -306,7 +325,7 @@ The v0 draft carried five open questions. After Round 1 + Round 2 MAO triangulat
 
 | Q | v0 question | v0.1 resolution |
 |---|---|---|
-| Q1 | `ops_schemas` location | **Top-level shared package at `platforms_os/ops_schemas/`** — avoids reverse dependency (SimOS importing from DemandSignalOS) |
+| Q1 | `ops_schemas` location | **Nested at `demand_signal_os.ops_schemas` for v0.1 (YAGNI); promote to `platforms_os/packages/ops_schemas/` at first external consumer import.** See §8 promotion policy. The transitive-dependency cost (scipy / lightgbm / pandas) is the real trigger, not the reverse-dependency aesthetic. |
 | Q2 | Third forecasting method (GBM vs probabilistic DL) | **GBM via Nixtla `SklearnModel` wrapping LightGBM quantile** — explainable (SHAP), no GPU dependency, lower data requirements than DeepAR |
 | Q3 | MinT realism for v0.1 | **Bottom-up = v0.1 default. MinT with Schäfer-Strimmer shrinkage = v0.2 stretch** — at 10k+ SKU scale MinT yields only 3–8% WRMSSE improvement at higher aggregation per JOSS benchmark |
 | Q4 | Where actuals_drift signal lives | **In PlanningOS critic (extends Phase-7 verdict schema). DemandSignalOS emits `ForecastAccuracy` on demand (pull, not push)** — keeps coupling one-directional |
