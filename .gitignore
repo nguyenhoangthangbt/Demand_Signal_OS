@@ -12,3 +12,10 @@ build/
 dist/
 .venv/
 venv/
+# Working-tree UAT/smoke/e2e harness scripts + their result logs
+.uat_*.py
+.uat_*_results.log
+.smoke_*.py
+.smoke_*_results.log
+.e2e_*.py
+.e2e_*_results.log

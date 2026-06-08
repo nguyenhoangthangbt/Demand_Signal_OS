@@ -9,6 +9,6 @@ Adapters:
 - o2c_adapter — InventoryPolicy + PIR for Order2Cash_os (v0.1.5+)
 """
 
-from demand_signal_os.consumers import simos_adapter
+from demand_signal_os.consumers import simos_adapter, simos_arrivals_adapter
 
-__all__ = ["simos_adapter"]
+__all__ = ["simos_adapter", "simos_arrivals_adapter"]
