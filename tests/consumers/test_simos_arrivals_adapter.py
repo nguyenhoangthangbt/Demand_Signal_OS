@@ -175,3 +175,76 @@ def test_write_yaml_entity_and_entry_node_overrides(tmp_path: Path) -> None:
     data = yaml.safe_load(out.read_text())
     assert data["sources"][0]["entity"]["type"] == "customer"
     assert data["sources"][0]["entry_node"] == "enter_store"
+
+
+# ─── Phase B.1 robustness guards ──────────────────────────────────────────
+
+
+def test_negative_mean_clips_to_zero_rate() -> None:
+    """Forecast mean < 0 (silly upstream bug) → clip to 0 rate, no crash."""
+    bundle = _bundle(start=date(2026, 7, 1), mean=-5.0)
+    entry = bundle_to_schedule_entry(bundle, t_seconds=0.0,
+                                      noise_from_band=False)
+    assert entry["rate_per_hour"] == 0.0
+
+
+def test_zero_mean_produces_zero_rate_and_zero_noise() -> None:
+    bundle = _bundle(start=date(2026, 7, 1), mean=0.0)
+    entry = bundle_to_schedule_entry(bundle, t_seconds=0.0, noise_from_band=True)
+    assert entry["rate_per_hour"] == 0.0
+    # Noise clipped to 0 since rate is 0 (would otherwise allow negatives)
+    assert entry["noise_std"] == 0.0
+
+
+def test_nan_mean_raises_loudly() -> None:
+    bundle = _bundle(start=date(2026, 7, 1))
+    nan_bundle = bundle.model_copy(update={"mean": math.nan})
+    with pytest.raises(ValueError, match="bundle.mean must be finite"):
+        bundle_to_schedule_entry(nan_bundle, t_seconds=0.0)
+
+
+def test_inf_mean_raises_loudly() -> None:
+    bundle = _bundle(start=date(2026, 7, 1))
+    inf_bundle = bundle.model_copy(update={"mean": math.inf})
+    with pytest.raises(ValueError, match="bundle.mean must be finite"):
+        bundle_to_schedule_entry(inf_bundle, t_seconds=0.0)
+
+
+def test_nan_quantile_raises_loudly() -> None:
+    bundle = _bundle(start=date(2026, 7, 1))
+    nan_q = bundle.quantiles.model_copy(update={"q25": math.nan})
+    nan_bundle = bundle.model_copy(update={"quantiles": nan_q})
+    with pytest.raises(ValueError, match="bundle.quantiles.q25 must be finite"):
+        bundle_to_schedule_entry(nan_bundle, t_seconds=0.0, noise_from_band=True)
+
+
+def test_negative_t_seconds_raises() -> None:
+    bundle = _bundle(start=date(2026, 7, 1))
+    with pytest.raises(ValueError, match="t_seconds must be >= 0"):
+        bundle_to_schedule_entry(bundle, t_seconds=-1.0)
+
+
+def test_nan_t_seconds_raises() -> None:
+    bundle = _bundle(start=date(2026, 7, 1))
+    with pytest.raises(ValueError, match="t_seconds must be finite"):
+        bundle_to_schedule_entry(bundle, t_seconds=math.nan)
+
+
+def test_noise_clipped_so_simos_cannot_draw_negative_rates() -> None:
+    """noise_std must be < rate_per_hour / 3 so SimOS Normal-around-rate
+    can't draw negative arrival rates within ~3 sigma."""
+    # Mean of 24 = rate 1.0/hour. Without clipping noise would scale
+    # with IQR. Build a wide IQR to force noise_std large.
+    q = Quantiles(q05=0, q10=2, q25=5, q50=24, q75=50, q90=100, q95=200)
+    wide_bundle = ForecastBundle(
+        sku_id="SKU-A", location_id="DC-A", bucket=_bucket(date(2026, 7, 1)),
+        horizon_label="operational",
+        quantiles=q, mean=24.0, method="ets",
+        provenance=_provenance(),
+    )
+    entry = bundle_to_schedule_entry(wide_bundle, t_seconds=0.0,
+                                      noise_from_band=True)
+    rate = entry["rate_per_hour"]  # = 1.0
+    noise = entry["noise_std"]
+    # Noise capped at rate/3
+    assert noise <= rate / 3.0 + 1e-9

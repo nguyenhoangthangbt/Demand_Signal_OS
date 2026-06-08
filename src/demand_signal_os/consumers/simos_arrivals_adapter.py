@@ -20,6 +20,7 @@ optionally with noise_std drawn from the forecast band width.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Iterable, Sequence
 from datetime import datetime
 from pathlib import Path
@@ -57,20 +58,70 @@ def bundle_to_schedule_entry(
     interquartile range divided by 1.349 (Gaussian-equivalent), so
     SimOS's ScheduleDistribution wobbles the rate around the forecast
     mean.
+
+    Robustness guards (Phase B.1, 2026-06-08):
+
+    - ``t_seconds`` must be finite and non-negative — NaN/inf/negative
+      raises ``ValueError``. (SimOS schedules are forward-only.)
+    - ``bundle.mean`` must be finite — NaN/inf raises ``ValueError``.
+    - ``bundle.mean < 0`` is clipped to 0.0. Negative means imply
+      negative arrival rates which SimOS cannot model — silently
+      clipping with a warning would mask the upstream forecast bug, so
+      we clip *explicitly* to the floor and document it; callers that
+      need the original signal can inspect the bundle directly.
+    - ``noise_std`` is clipped to never exceed ``rate_per_hour / 3``
+      (roughly the 3-sigma floor on a positive arrival rate),
+      preventing SimOS's ScheduleDistribution from drawing negative
+      rates by construction.
+    - Any quantile NaN raises ``ValueError`` rather than producing a
+      silent garbage noise_std.
     """
+    # Input validation — t_seconds must be a forward, finite offset.
+    if not math.isfinite(t_seconds):
+        raise ValueError(f"t_seconds must be finite, got {t_seconds!r}")
+    if t_seconds < 0:
+        raise ValueError(f"t_seconds must be >= 0, got {t_seconds}")
+
+    # bundle.mean must be finite — NaN/inf would propagate into SimOS.
+    if not math.isfinite(bundle.mean):
+        raise ValueError(
+            f"bundle.mean must be finite, got {bundle.mean!r} "
+            f"(sku={bundle.sku_id}, location={bundle.location_id})"
+        )
+
     bucket_hours = _bucket_seconds(bundle) / 3600.0
-    if bucket_hours <= 0:
-        raise ValueError(f"bundle bucket has non-positive duration: {bucket_hours}h")
-    rate_per_hour = float(bundle.mean) / bucket_hours
+    if bucket_hours <= 0 or not math.isfinite(bucket_hours):
+        raise ValueError(
+            f"bundle bucket has non-positive or non-finite duration: "
+            f"{bucket_hours}h"
+        )
+
+    # Clip negative mean to 0 — explicit floor.
+    safe_mean = max(float(bundle.mean), 0.0)
+    rate_per_hour = safe_mean / bucket_hours
 
     entry: dict[str, float] = {
         "time": float(t_seconds),
         "rate_per_hour": rate_per_hour,
     }
     if noise_from_band:
+        # Validate quantiles are finite. NaN in any quantile is a
+        # forecast bug — fail loud rather than emit a garbage schedule.
+        q = bundle.quantiles
+        for label, value in (("q25", q.q25), ("q75", q.q75)):
+            if not math.isfinite(value):
+                raise ValueError(
+                    f"bundle.quantiles.{label} must be finite, got {value!r} "
+                    f"(sku={bundle.sku_id}, location={bundle.location_id})"
+                )
         # IQR / 1.349 = Gaussian-equivalent sigma per textbook convention
-        iqr = bundle.quantiles.q75 - bundle.quantiles.q25
+        iqr = q.q75 - q.q25
         noise = max(iqr / 1.349, 0.0) / bucket_hours
+        # Clip noise so SimOS's normal-around-rate doesn't draw negatives.
+        # rate - 3*noise > 0  =>  noise < rate / 3
+        # When rate is 0 (no arrivals expected), force noise to 0 so the
+        # schedule stays at-zero rather than drawing negatives.
+        noise = min(noise, rate_per_hour / 3.0) if rate_per_hour > 0 else 0.0
         entry["noise_std"] = float(noise)
     return entry
 
