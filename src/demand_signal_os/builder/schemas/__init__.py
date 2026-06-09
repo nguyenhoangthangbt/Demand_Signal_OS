@@ -18,9 +18,13 @@ from excel_io import WorkbookSpec
 from demand_signal_os.builder.schemas.demand_history import (
     DEMAND_HISTORY_SCHEMA,
 )
+from demand_signal_os.builder.schemas.demand_history_multi import (
+    DEMAND_HISTORY_MULTI_SCHEMA,
+)
 
 SCHEMA_REGISTRY: dict[str, WorkbookSpec] = {
     "demand_history": DEMAND_HISTORY_SCHEMA,
+    "demand_history_multi": DEMAND_HISTORY_MULTI_SCHEMA,
 }
 
 
@@ -34,4 +38,9 @@ def get_schema(template_name: str) -> WorkbookSpec:
     return SCHEMA_REGISTRY[template_name]
 
 
-__all__ = ["DEMAND_HISTORY_SCHEMA", "SCHEMA_REGISTRY", "get_schema"]
+__all__ = [
+    "DEMAND_HISTORY_SCHEMA",
+    "DEMAND_HISTORY_MULTI_SCHEMA",
+    "SCHEMA_REGISTRY",
+    "get_schema",
+]
