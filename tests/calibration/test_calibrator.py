@@ -503,6 +503,32 @@ def test_calibrate_with_ses_forecaster_fails_on_regime_shift() -> None:
     ]
 
 
+def test_inputs_hash_changes_when_fit_ratio_changes() -> None:
+    """Closes triangulation 2 BLOCKER #1 (compose_inputs_hash unused):
+    different fit_ratio MUST produce a different inputs_hash. Without
+    this, the signed receipt commits to a lie when config changes."""
+    actuals = _gaussian_demand(30, 100, 10)
+    r_default = DemandSignalCalibrator(
+        forecaster=_TestMovingAverageForecaster(), fit_ratio=0.7
+    ).calibrate(_ref(), actuals)
+    r_changed = DemandSignalCalibrator(
+        forecaster=_TestMovingAverageForecaster(), fit_ratio=0.5
+    ).calibrate(_ref(), actuals)
+    assert r_default.inputs_hash != r_changed.inputs_hash
+
+
+def test_inputs_hash_changes_when_tolerance_overrides_change() -> None:
+    actuals = _gaussian_demand(30, 100, 10)
+    r_default = DemandSignalCalibrator(
+        forecaster=_TestMovingAverageForecaster()
+    ).calibrate(_ref(), actuals)
+    r_tight = DemandSignalCalibrator(
+        forecaster=_TestMovingAverageForecaster(),
+        tolerance_overrides={"MAPE": 0.05},
+    ).calibrate(_ref(), actuals)
+    assert r_default.inputs_hash != r_tight.inputs_hash
+
+
 def test_calibrate_with_tiny_baseline_crps_does_not_explode() -> None:
     """baseline_crps just above 0 — CRPS ratio is huge but receipt still
     parses + emits without NaN/Inf."""

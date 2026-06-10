@@ -65,6 +65,7 @@ from ops_schemas import (  # re-export
     ToleranceKind,
     WorkbookReference,
     canonical_receipt_json,
+    compose_inputs_hash,
     sign_receipt,
     verify_receipt,
 )
@@ -118,6 +119,7 @@ __all__ = [
     "ToleranceKind",
     "WorkbookReference",
     "canonical_receipt_json",
+    "compose_inputs_hash",
     "sign_receipt",
     "verify_receipt",
 ]
