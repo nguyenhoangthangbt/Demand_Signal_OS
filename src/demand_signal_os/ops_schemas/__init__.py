@@ -66,6 +66,7 @@ from ops_schemas import (  # re-export
     WorkbookReference,
     canonical_receipt_json,
     compose_inputs_hash,
+    derive_test_mode_secret,
     sign_receipt,
     verify_receipt,
 )
@@ -120,6 +121,7 @@ __all__ = [
     "WorkbookReference",
     "canonical_receipt_json",
     "compose_inputs_hash",
+    "derive_test_mode_secret",
     "sign_receipt",
     "verify_receipt",
 ]

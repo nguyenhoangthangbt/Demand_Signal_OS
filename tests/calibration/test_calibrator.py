@@ -204,7 +204,7 @@ def test_calibrate_known_gaussian_window_emits_passing_receipt() -> None:
     """Golden test: stable Gaussian demand → calibrator emits a passing
     receipt because the MA forecaster recovers the mean within tolerance."""
     forecaster = _TestMovingAverageForecaster()
-    cal = DemandSignalCalibrator(forecaster=forecaster)
+    cal = DemandSignalCalibrator(forecaster=forecaster, require_signing=False)
     actuals = _gaussian_demand(30, mu=100.0, sigma=10.0)
     receipt = cal.calibrate(_ref(baseline_crps=15.0), actuals)
     assert receipt.kind == CalibrationKind.SINGLE_SHOT
@@ -221,6 +221,7 @@ def test_calibrate_noisy_demand_produces_failed_receipt() -> None:
     cal = DemandSignalCalibrator(
         forecaster=forecaster,
         tolerance_overrides={"MAPE": 0.05},  # tight tolerance forces fail
+        require_signing=False,
     )
     actuals = _gaussian_demand(30, mu=100.0, sigma=80.0, seed=99)
     receipt = cal.calibrate(_ref(baseline_crps=15.0), actuals)
@@ -230,7 +231,7 @@ def test_calibrate_noisy_demand_produces_failed_receipt() -> None:
 
 def test_calibrate_rejects_wrong_reference_type() -> None:
     forecaster = _TestMovingAverageForecaster()
-    cal = DemandSignalCalibrator(forecaster=forecaster)
+    cal = DemandSignalCalibrator(forecaster=forecaster, require_signing=False)
     wrong = WorkbookReference(
         workbook_name="x",
         meta=CalibrationReferenceMeta(data_hash=SHA_DUMMY),
@@ -241,14 +242,14 @@ def test_calibrate_rejects_wrong_reference_type() -> None:
 
 
 def test_calibrate_requires_forecaster_injection() -> None:
-    cal = DemandSignalCalibrator()
+    cal = DemandSignalCalibrator(require_signing=False)
     with pytest.raises(Exception):
         cal.calibrate(_ref(), _gaussian_demand(20, 100, 10))
 
 
 def test_calibrate_rejects_too_few_actuals() -> None:
     forecaster = _TestMovingAverageForecaster()
-    cal = DemandSignalCalibrator(forecaster=forecaster)
+    cal = DemandSignalCalibrator(forecaster=forecaster, require_signing=False)
     with pytest.raises(IncompleteCalibration):
         cal.calibrate(_ref(count=5), _gaussian_demand(5, 100, 10))
 
@@ -276,7 +277,7 @@ def test_provenance_envelope_seed_preserved() -> None:
     """Reproducibility: the receipt's provenance seed must match the
     forecaster's bundle seed so a customer can recreate the calibration."""
     forecaster = _TestMovingAverageForecaster()
-    cal = DemandSignalCalibrator(forecaster=forecaster)
+    cal = DemandSignalCalibrator(forecaster=forecaster, require_signing=False)
     receipt = cal.calibrate(_ref(), _gaussian_demand(30, 100, 10))
     assert receipt.provenance.seed == 42  # matches forecaster's seed
     assert receipt.provenance.engine == "demandsignal"
@@ -286,7 +287,7 @@ def test_metric_independence_tier_is_semi_independent() -> None:
     """Forecasting calibration is semi-independent — actuals come from
     the same SKU/location/bucket the forecaster trained on."""
     forecaster = _TestMovingAverageForecaster()
-    cal = DemandSignalCalibrator(forecaster=forecaster)
+    cal = DemandSignalCalibrator(forecaster=forecaster, require_signing=False)
     receipt = cal.calibrate(_ref(), _gaussian_demand(30, 100, 10))
     for m in receipt.phases[0].metrics:
         assert m.independence == CheckIndependence.SEMI_INDEPENDENT
@@ -294,7 +295,7 @@ def test_metric_independence_tier_is_semi_independent() -> None:
 
 def test_hard_gates_on_required_metrics() -> None:
     forecaster = _TestMovingAverageForecaster()
-    cal = DemandSignalCalibrator(forecaster=forecaster)
+    cal = DemandSignalCalibrator(forecaster=forecaster, require_signing=False)
     receipt = cal.calibrate(_ref(), _gaussian_demand(30, 100, 10))
     gates = {m.name: m.gate for m in receipt.phases[0].metrics}
     assert gates == {
@@ -307,7 +308,7 @@ def test_hard_gates_on_required_metrics() -> None:
 
 def test_calibration_status_calibrated_for_stable_demand() -> None:
     forecaster = _TestMovingAverageForecaster()
-    cal = DemandSignalCalibrator(forecaster=forecaster)
+    cal = DemandSignalCalibrator(forecaster=forecaster, require_signing=False)
     receipt = cal.calibrate(_ref(), _gaussian_demand(30, 100, 10))
     s = CalibrationStatus(engine="demandsignal", receipt=receipt)
     assert s.state == CalibrationState.CALIBRATED
@@ -325,7 +326,7 @@ def test_metric_values_within_analytical_bounds_on_stable_gaussian() -> None:
     track sigma/mu ≈ 0.10. Assert metric values are in the right
     neighbourhood, not just structurally present."""
     forecaster = _TestMovingAverageForecaster()
-    cal = DemandSignalCalibrator(forecaster=forecaster)
+    cal = DemandSignalCalibrator(forecaster=forecaster, require_signing=False)
     receipt = cal.calibrate(_ref(baseline_crps=15.0), _gaussian_demand(60, 100.0, 10.0))
     by_name = {m.name: m for m in receipt.phases[0].metrics}
     # MAPE: error / actual. For sigma/mu = 0.10 with 30 samples,
@@ -348,8 +349,8 @@ def test_calibrate_twice_produces_identical_hashes_and_metrics() -> None:
     actuals = _gaussian_demand(30, 100, 10, seed=123)
     forecaster_a = _TestMovingAverageForecaster()
     forecaster_b = _TestMovingAverageForecaster()
-    r1 = DemandSignalCalibrator(forecaster=forecaster_a).calibrate(_ref(), actuals)
-    r2 = DemandSignalCalibrator(forecaster=forecaster_b).calibrate(_ref(), actuals)
+    r1 = DemandSignalCalibrator(forecaster=forecaster_a, require_signing=False).calibrate(_ref(), actuals)
+    r2 = DemandSignalCalibrator(forecaster=forecaster_b, require_signing=False).calibrate(_ref(), actuals)
     assert r1.inputs_hash == r2.inputs_hash
     metrics_1 = sorted(
         (m.name, m.measured_value) for m in r1.phases[0].metrics
@@ -461,7 +462,7 @@ def test_calibrate_with_ses_forecaster_passes_on_stable_demand() -> None:
     """Calibrator works against a state-space variance forecaster, not
     just the MA stub. Different math, same contract."""
     forecaster = _SimpleETSForecaster(alpha=0.3)
-    cal = DemandSignalCalibrator(forecaster=forecaster)
+    cal = DemandSignalCalibrator(forecaster=forecaster, require_signing=False)
     receipt = cal.calibrate(_ref(baseline_crps=15.0), _gaussian_demand(60, 100, 10))
     assert receipt.overall_passed is True
     s = CalibrationStatus(engine="demandsignal", receipt=receipt)
@@ -495,7 +496,7 @@ def test_calibrate_with_ses_forecaster_fails_on_regime_shift() -> None:
             )
         )
     forecaster = _SimpleETSForecaster(alpha=0.1)  # slow alpha can't track
-    cal = DemandSignalCalibrator(forecaster=forecaster)
+    cal = DemandSignalCalibrator(forecaster=forecaster, require_signing=False)
     receipt = cal.calibrate(_ref(baseline_crps=15.0), stable + shifted_buckets)
     # Slow SES on a level-shift: MAPE blows past 0.25 absolute tolerance.
     assert receipt.overall_passed is False, [
@@ -509,10 +510,12 @@ def test_inputs_hash_changes_when_fit_ratio_changes() -> None:
     this, the signed receipt commits to a lie when config changes."""
     actuals = _gaussian_demand(30, 100, 10)
     r_default = DemandSignalCalibrator(
-        forecaster=_TestMovingAverageForecaster(), fit_ratio=0.7
+        forecaster=_TestMovingAverageForecaster(), fit_ratio=0.7,
+        require_signing=False,
     ).calibrate(_ref(), actuals)
     r_changed = DemandSignalCalibrator(
-        forecaster=_TestMovingAverageForecaster(), fit_ratio=0.5
+        forecaster=_TestMovingAverageForecaster(), fit_ratio=0.5,
+        require_signing=False,
     ).calibrate(_ref(), actuals)
     assert r_default.inputs_hash != r_changed.inputs_hash
 
@@ -520,20 +523,33 @@ def test_inputs_hash_changes_when_fit_ratio_changes() -> None:
 def test_inputs_hash_changes_when_tolerance_overrides_change() -> None:
     actuals = _gaussian_demand(30, 100, 10)
     r_default = DemandSignalCalibrator(
-        forecaster=_TestMovingAverageForecaster()
+        forecaster=_TestMovingAverageForecaster(),
+        require_signing=False,
     ).calibrate(_ref(), actuals)
     r_tight = DemandSignalCalibrator(
         forecaster=_TestMovingAverageForecaster(),
         tolerance_overrides={"MAPE": 0.05},
+        require_signing=False,
     ).calibrate(_ref(), actuals)
     assert r_default.inputs_hash != r_tight.inputs_hash
+
+
+def test_default_calibrator_refuses_unsigned_calibrate() -> None:
+    """Closes triangulation 3 BLOCKER #6: require_signing defaults
+    True; calibrate() raises before any work if signing_secret is None."""
+    from ops_schemas import CalibrationError
+
+    actuals = _gaussian_demand(30, 100, 10)
+    cal = DemandSignalCalibrator(forecaster=_TestMovingAverageForecaster())
+    with pytest.raises(CalibrationError):
+        cal.calibrate(_ref(), actuals)
 
 
 def test_calibrate_with_tiny_baseline_crps_does_not_explode() -> None:
     """baseline_crps just above 0 — CRPS ratio is huge but receipt still
     parses + emits without NaN/Inf."""
     forecaster = _TestMovingAverageForecaster()
-    cal = DemandSignalCalibrator(forecaster=forecaster)
+    cal = DemandSignalCalibrator(forecaster=forecaster, require_signing=False)
     ref_tiny = ForecastActualsReference(
         sku_id="SKU-G",
         location_id="DC-1",

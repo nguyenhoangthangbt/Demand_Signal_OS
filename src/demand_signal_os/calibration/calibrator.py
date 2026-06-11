@@ -91,6 +91,18 @@ class DemandSignalCalibrator:
     tolerance_overrides: dict[str, float] = field(default_factory=dict)
     signing_secret: bytes | None = None  # set per deployment
     signing_key_id: str = "dso-calibrator-key-v1"
+    # Closes triangulation 3 BLOCKER #6: when True (the production
+    # default), an instance with ``signing_secret=None`` raises at
+    # the first ``calibrate()`` call rather than silently emitting an
+    # unsigned receipt that the federation will reject with 401.
+    require_signing: bool = True
+
+    def __post_init__(self) -> None:
+        if self.require_signing and self.signing_secret is None:
+            # Defer the raise to calibrate() so test harnesses + dev
+            # scripts can construct, inspect, and then assign the
+            # secret. The check fires before any work is done.
+            pass
 
     # ---- public API ----
 
@@ -114,6 +126,14 @@ class DemandSignalCalibrator:
             raise CalibrationError(
                 "DemandSignalCalibrator requires a Forecaster injection "
                 "before calibrate() is called"
+            )
+        if self.require_signing and self.signing_secret is None:
+            raise CalibrationError(
+                "DemandSignalCalibrator: signing_secret is required "
+                "(receipts without a signature are rejected by the "
+                "Plan2Cash federation). Set require_signing=False "
+                "explicitly to opt out — only acceptable for dev / unit "
+                "tests."
             )
 
         history = list(actuals)
