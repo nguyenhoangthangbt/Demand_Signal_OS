@@ -53,6 +53,7 @@ from demand_signal_os.ops_schemas import (
     PhaseResult,
     ProvenanceEnvelope,
     ToleranceKind,
+    compose_inputs_hash,
     sign_receipt,
 )
 
@@ -90,6 +91,18 @@ class DemandSignalCalibrator:
     tolerance_overrides: dict[str, float] = field(default_factory=dict)
     signing_secret: bytes | None = None  # set per deployment
     signing_key_id: str = "dso-calibrator-key-v1"
+    # Closes triangulation 3 BLOCKER #6: when True (the production
+    # default), an instance with ``signing_secret=None`` raises at
+    # the first ``calibrate()`` call rather than silently emitting an
+    # unsigned receipt that the federation will reject with 401.
+    require_signing: bool = True
+
+    def __post_init__(self) -> None:
+        if self.require_signing and self.signing_secret is None:
+            # Defer the raise to calibrate() so test harnesses + dev
+            # scripts can construct, inspect, and then assign the
+            # secret. The check fires before any work is done.
+            pass
 
     # ---- public API ----
 
@@ -113,6 +126,14 @@ class DemandSignalCalibrator:
             raise CalibrationError(
                 "DemandSignalCalibrator requires a Forecaster injection "
                 "before calibrate() is called"
+            )
+        if self.require_signing and self.signing_secret is None:
+            raise CalibrationError(
+                "DemandSignalCalibrator: signing_secret is required "
+                "(receipts without a signature are rejected by the "
+                "Plan2Cash federation). Set require_signing=False "
+                "explicitly to opt out — only acceptable for dev / unit "
+                "tests."
             )
 
         history = list(actuals)
@@ -231,15 +252,27 @@ class DemandSignalCalibrator:
             metrics=metrics,
         )
 
-        # Hashes — inputs include the actuals window, outputs include
-        # the bundle id and aggregate metrics.
-        inputs_payload = "|".join(
+        # Closes triangulation #6 (cross-impl review) + post-merge #1: use the
+        # shared ``compose_inputs_hash`` helper so the signed receipt
+        # commits to the full config (fit_ratio + tolerance_overrides +
+        # baseline_crps + actuals payload).
+        actuals_payload = "|".join(
             f"{a.sku_id}:{a.units_sold}:{a.recorded_at.isoformat()}"
             for a in history
         )
-        inputs_hash = "sha256:" + hashlib.sha256(
-            inputs_payload.encode("utf-8")
-        ).hexdigest()
+        config = {
+            "fit_ratio": self.fit_ratio,
+            "tolerance_overrides": dict(sorted(self.tolerance_overrides.items())),
+            "baseline_crps": reference.baseline_crps,
+            "horizon_label": reference.horizon_label,
+            "actuals_payload": actuals_payload,
+            "forecaster_id": (
+                f"{self.forecaster.name}@{self.forecaster.version}"
+                if self.forecaster is not None
+                else "unknown"
+            ),
+        }
+        inputs_hash = compose_inputs_hash(reference, config, code_version=self.version)
         outputs_payload = (
             f"{bundle.provenance.forecast_bundle_id}|MAPE={mape_mean}"
             f"|sMAPE={smape_mean}|CRPS={crps_mean}|cov={coverage}"
