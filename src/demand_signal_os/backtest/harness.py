@@ -45,6 +45,12 @@ class WindowResult:
     pinball_q50: float
     pinball_q90: float
     wis: float
+    # Probabilistic interval membership (additive; default False keeps
+    # hand-built WindowResults in existing tests valid). Used by the
+    # leaderboard to report empirical coverage — our differentiator over
+    # point-error-only tools (PyCaret et al.).
+    in_interval_50: bool = False
+    in_interval_90: bool = False
 
 
 @dataclass
@@ -59,6 +65,10 @@ class BacktestSummary:
     mean_pinball_q90: float
     mean_wis: float
     beats_all_benchmarks: bool | None = None
+    # Empirical interval coverage: fraction of horizon points where the
+    # actual fell inside the 50% (q25..q75) / 90% (q05..q95) band.
+    coverage_50: float | None = None
+    coverage_90: float | None = None
 
 
 def make_windows(
@@ -157,6 +167,12 @@ def evaluate_window(
                 pinball_q50=pinball_loss(actual, bundle.quantiles.q50, 0.50),
                 pinball_q90=pinball_loss(actual, bundle.quantiles.q90, 0.90),
                 wis=wis(actual, bundle.quantiles),
+                in_interval_50=bool(
+                    bundle.quantiles.q25 <= actual <= bundle.quantiles.q75
+                ),
+                in_interval_90=bool(
+                    bundle.quantiles.q05 <= actual <= bundle.quantiles.q95
+                ),
             )
         )
     return results
@@ -179,6 +195,8 @@ def summarize(results: list[WindowResult]) -> BacktestSummary:
         mean_pinball_q50=float(np.mean([r.pinball_q50 for r in results])),
         mean_pinball_q90=float(np.mean([r.pinball_q90 for r in results])),
         mean_wis=float(np.mean([r.wis for r in results])),
+        coverage_50=float(np.mean([r.in_interval_50 for r in results])),
+        coverage_90=float(np.mean([r.in_interval_90 for r in results])),
     )
 
 
@@ -199,4 +217,6 @@ def mark_benchmark_beating(
         mean_pinball_q90=candidate.mean_pinball_q90,
         mean_wis=candidate.mean_wis,
         beats_all_benchmarks=beats_all,
+        coverage_50=candidate.coverage_50,
+        coverage_90=candidate.coverage_90,
     )
