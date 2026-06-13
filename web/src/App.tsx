@@ -11,9 +11,22 @@
 // drift signal.
 
 import { useEffect, useState } from "react";
+import VerifyView from "./VerifyView";
 
 const API_BASE = "https://plan2cash-api.sim-os.ai";
 const TOKEN_KEY = "dso_token_v1";
+
+// Tiny hash-based view router (App.tsx has no React Router). The Verify trust
+// gate lives at #verify; everything else renders the default workbench SPA.
+function useHashView(): string {
+  const [hash, setHash] = useState<string>(() => window.location.hash);
+  useEffect(() => {
+    const onHash = () => setHash(window.location.hash);
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+  return hash;
+}
 
 const PALETTE = {
   bg: "#0f172a",
@@ -57,6 +70,8 @@ interface TemplateMeta {
 export default function App() {
   const [token, setToken] = useState<string>(() => localStorage.getItem(TOKEN_KEY) ?? "");
   const [draftToken, setDraftToken] = useState<string>(token);
+  const hash = useHashView();
+  const isVerify = hash === "#verify";
 
   useEffect(() => {
     if (token) localStorage.setItem(TOKEN_KEY, token);
@@ -80,19 +95,25 @@ export default function App() {
           setDraftToken("");
         }}
       />
-      <Hero />
-      {!token ? (
-        <TokenGate
-          draftToken={draftToken}
-          setDraftToken={setDraftToken}
-          onSubmit={() => setToken(draftToken.trim())}
-        />
+      {isVerify ? (
+        <VerifyView />
       ) : (
-        <WorkbenchSection token={token} />
+        <>
+          <Hero />
+          {!token ? (
+            <TokenGate
+              draftToken={draftToken}
+              setDraftToken={setDraftToken}
+              onSubmit={() => setToken(draftToken.trim())}
+            />
+          ) : (
+            <WorkbenchSection token={token} />
+          )}
+          <ForecastPreview />
+          <CensoringSection />
+          <ConsumersSection />
+        </>
       )}
-      <ForecastPreview />
-      <CensoringSection />
-      <ConsumersSection />
       <Footer />
     </div>
   );
@@ -120,6 +141,18 @@ function Header({ token, onSignOut }: { token: string; onSignOut: () => void }) 
         </p>
       </div>
       <nav style={{ display: "flex", gap: 12, alignItems: "center" }}>
+        <a
+          href="#verify"
+          style={{ color: PALETTE.link, fontSize: "0.8rem", textDecoration: "none" }}
+        >
+          Verify
+        </a>
+        <a
+          href="#"
+          style={{ color: PALETTE.link, fontSize: "0.8rem", textDecoration: "none" }}
+        >
+          Workbench
+        </a>
         <a
           href="https://plan2cash.sim-os.ai"
           style={{ color: PALETTE.link, fontSize: "0.8rem", textDecoration: "none" }}
