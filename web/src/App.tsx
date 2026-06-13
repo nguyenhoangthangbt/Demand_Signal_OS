@@ -282,11 +282,19 @@ function WorkbenchSection({ token }: { token: string }) {
   } | null>(null);
 
   useEffect(() => {
+    setLoadError(null); // clear any prior error so a corrected key can retry
     fetch(`${API_BASE}/api/v1/templates`, {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then((r) => {
-        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+        if (!r.ok) {
+          if (r.status === 401 || r.status === 403) {
+            throw new Error(
+              "That tier key was not accepted. Check that it is a valid, active mao_live_* key, or email admin@sim-os.ai for a Suite seat.",
+            );
+          }
+          throw new Error(`${r.status} ${r.statusText}`);
+        }
         return r.json();
       })
       .then((d) => {
@@ -390,7 +398,7 @@ function WorkbenchSection({ token }: { token: string }) {
         </div>
       )}
 
-      {!templates ? (
+      {loadError ? null : !templates ? (
         <p style={{ color: PALETTE.textDim, fontSize: "0.85rem" }}>Loading…</p>
       ) : templates.length === 0 ? (
         <p style={{ color: PALETTE.textDim, fontSize: "0.85rem" }}>
