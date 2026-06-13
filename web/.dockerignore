@@ -1,0 +1,11 @@
+# Web build context: the build stage runs `npm ci` fresh, so local
+# node_modules / dist must NOT be shipped in the context (they only slow the
+# transfer — observed pathological slowness on the OneDrive filesystem).
+node_modules
+dist
+.vite
+.env
+.env.local
+.env.*.local
+.gitignore
+.DS_Store
