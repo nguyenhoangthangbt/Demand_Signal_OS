@@ -71,7 +71,7 @@ _EXAMPLE_CHECKS = [
         "name": "drift magnitude (<1.5 = stable)",
         "measured_value": 0.86,
         "reference_value": 1.5,
-        "tolerance": 0.0,
+        "tolerance": 0.1,
         "direction": "lower_better",
         "formula": "crps / baseline_crps",
     },

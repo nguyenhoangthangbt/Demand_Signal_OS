@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "calibration_id": "cal_demandsignal_14cfbd823c",
+  "calibration_id": "cal_demandsignal_33ef3538d1",
   "kind": "single_shot",
   "reference": {
     "kind": "forecast_actuals",
@@ -21,8 +21,8 @@
       "schema_version": 1,
       "phase_id": "accuracy",
       "title": "Forecast calibration (coverage + CRPS + drift)",
-      "started_at": "2026-06-13T07:14:21.935949Z",
-      "completed_at": "2026-06-13T07:14:21.935949Z",
+      "started_at": "2026-06-13T07:23:41.004694Z",
+      "completed_at": "2026-06-13T07:23:41.004694Z",
       "metrics": [
         {
           "schema_version": 1,
@@ -55,7 +55,7 @@
           "name": "drift magnitude (<1.5 = stable)",
           "measured_value": 0.86,
           "reference_value": 1.5,
-          "tolerance": 0.0,
+          "tolerance": 0.1,
           "tolerance_kind": "absolute",
           "direction": "lower_better",
           "gate": "hard",
@@ -69,8 +69,8 @@
       "skip_reason": null
     }
   ],
-  "started_at": "2026-06-13T07:14:21.935949Z",
-  "completed_at": "2026-06-13T07:14:21.935949Z",
+  "started_at": "2026-06-13T07:23:41.004694Z",
+  "completed_at": "2026-06-13T07:23:41.004694Z",
   "provenance": {
     "schema_version": 1,
     "engine": "demandsignal",
@@ -78,7 +78,7 @@
     "commit_sha": null,
     "seed": null,
     "parent_ids": [],
-    "produced_at": "2026-06-13T07:14:21.935949Z",
+    "produced_at": "2026-06-13T07:23:41.004694Z",
     "engine_config_hash": null
   },
   "freshness_policy": {
@@ -88,12 +88,12 @@
   "upstream_receipt_refs": [],
   "propagation_rule": "weakest_link",
   "inputs_hash": "sha256:66780862710f241daa301a43e83c9391841baf6c98e6514c470fa081f5768326",
-  "outputs_hash": "sha256:dc96e46374ead64356101a69bcce48af7623db31c56b5361016e321088420f0e",
+  "outputs_hash": "sha256:c0b859d5c56919dbfa8608e3d8c9c8f0b77a50b256817e56049328fc16cc22d7",
   "caveats": [
     "Operational horizon H+4w; ETS forecast scored on 28 observed days; CRPS per Gneiting-Raftery 2007."
   ],
   "internal_notes": null,
-  "signature": "ea34a5b5da331a115792b3b7ac9975991f96458affbd3ab10a8f56a46ce43602",
+  "signature": "48a22e0e974e0dd47b1f085814fae17fb88e7ecdb08adb6703cf4f93cf9403e4",
   "signed_by": "dso-calibrator-key-v1",
   "key_version": 1
 }
