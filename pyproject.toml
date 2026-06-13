@@ -37,6 +37,14 @@ dev = [
     "ruff>=0.4",
     "hypothesis>=6.100",
 ]
+# Thin trust-gate API (src/demand_signal_os/api/). Deliberately separate from
+# the base deps so the Docker image can install ONLY trust_gate + ops_schemas +
+# excel_io + fastapi + uvicorn — never the heavy forecasting stack
+# (scipy / statsforecast / lightgbm). See src/demand_signal_os/api/__init__.py.
+api = [
+    "fastapi",
+    "uvicorn[standard]",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

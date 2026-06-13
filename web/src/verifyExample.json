@@ -1,0 +1,99 @@
+{
+  "schema_version": 1,
+  "calibration_id": "cal_demandsignal_14cfbd823c",
+  "kind": "single_shot",
+  "reference": {
+    "kind": "forecast_actuals",
+    "sku_id": "SKU-4471",
+    "location_id": "DC-EAST",
+    "horizon_label": "operational",
+    "baseline_crps": 12.4,
+    "actual_count": 28,
+    "meta": {
+      "data_hash": "sha256:057cf75f5e658522337ecb3b8035514ab51ae9cf496f56c224e2d30e5c7800aa",
+      "data_uri": null,
+      "bucket": null,
+      "notes": null
+    }
+  },
+  "phases": [
+    {
+      "schema_version": 1,
+      "phase_id": "accuracy",
+      "title": "Forecast calibration (coverage + CRPS + drift)",
+      "started_at": "2026-06-13T07:14:21.935949Z",
+      "completed_at": "2026-06-13T07:14:21.935949Z",
+      "metrics": [
+        {
+          "schema_version": 1,
+          "name": "90% interval coverage",
+          "measured_value": 0.91,
+          "reference_value": 0.9,
+          "tolerance": 0.05,
+          "tolerance_kind": "absolute",
+          "direction": "match",
+          "gate": "hard",
+          "independence": "semi_independent",
+          "formula": "mean(1[actual in [q05,q95]])",
+          "payload": {}
+        },
+        {
+          "schema_version": 1,
+          "name": "CRPS vs baseline (ratio)",
+          "measured_value": 0.86,
+          "reference_value": 1.0,
+          "tolerance": 0.5,
+          "tolerance_kind": "absolute",
+          "direction": "lower_better",
+          "gate": "hard",
+          "independence": "semi_independent",
+          "formula": "crps_model / baseline_crps",
+          "payload": {}
+        },
+        {
+          "schema_version": 1,
+          "name": "drift magnitude (<1.5 = stable)",
+          "measured_value": 0.86,
+          "reference_value": 1.5,
+          "tolerance": 0.0,
+          "tolerance_kind": "absolute",
+          "direction": "lower_better",
+          "gate": "hard",
+          "independence": "semi_independent",
+          "formula": "crps / baseline_crps",
+          "payload": {}
+        }
+      ],
+      "depends_on": [],
+      "skipped": false,
+      "skip_reason": null
+    }
+  ],
+  "started_at": "2026-06-13T07:14:21.935949Z",
+  "completed_at": "2026-06-13T07:14:21.935949Z",
+  "provenance": {
+    "schema_version": 1,
+    "engine": "demandsignal",
+    "engine_version": "dso-0.1",
+    "commit_sha": null,
+    "seed": null,
+    "parent_ids": [],
+    "produced_at": "2026-06-13T07:14:21.935949Z",
+    "engine_config_hash": null
+  },
+  "freshness_policy": {
+    "kind": "time",
+    "window_hours": 720.0
+  },
+  "upstream_receipt_refs": [],
+  "propagation_rule": "weakest_link",
+  "inputs_hash": "sha256:66780862710f241daa301a43e83c9391841baf6c98e6514c470fa081f5768326",
+  "outputs_hash": "sha256:dc96e46374ead64356101a69bcce48af7623db31c56b5361016e321088420f0e",
+  "caveats": [
+    "Operational horizon H+4w; ETS forecast scored on 28 observed days; CRPS per Gneiting-Raftery 2007."
+  ],
+  "internal_notes": null,
+  "signature": "ea34a5b5da331a115792b3b7ac9975991f96458affbd3ab10a8f56a46ce43602",
+  "signed_by": "dso-calibrator-key-v1",
+  "key_version": 1
+}

@@ -1,5 +1,6 @@
 __pycache__/
 *.pyc
+.claude/
 .pytest_cache/
 .coverage
 .venv/
@@ -15,3 +16,4 @@ dist/
 !.env.example
 web/node_modules/
 web/dist/
+*.tsbuildinfo
