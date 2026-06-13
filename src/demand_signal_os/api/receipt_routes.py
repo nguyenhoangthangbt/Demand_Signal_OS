@@ -46,6 +46,7 @@ class ReceiptRequest(BaseModel):
     actual_count: int = Field(gt=0)
     checks: list[ReceiptCheckIn] = Field(default_factory=list)
     caveats: list[str] = Field(default_factory=list)
+    upstream_receipt_refs: list[str] = Field(default_factory=list)
 
 
 # A real, realistic DSO forecast-trust example (operational H+4w run on
@@ -100,6 +101,7 @@ async def emit_receipt(body: ReceiptRequest) -> dict:
         actual_count=body.actual_count,
         checks=[c.model_dump() for c in body.checks],
         caveats=tuple(body.caveats),
+        upstream_receipt_refs=tuple(body.upstream_receipt_refs),
     )
     return r.model_dump(mode="json")
 
