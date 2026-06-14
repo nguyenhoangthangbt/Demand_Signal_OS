@@ -11,6 +11,7 @@
 // drift signal.
 
 import { useEffect, useState } from "react";
+import LeaderboardView from "./LeaderboardView";
 import VerifyView from "./VerifyView";
 
 const API_BASE = "https://plan2cash-api.sim-os.ai";
@@ -72,6 +73,7 @@ export default function App() {
   const [draftToken, setDraftToken] = useState<string>(token);
   const hash = useHashView();
   const isVerify = hash === "#verify";
+  const isLeaderboard = hash === "#leaderboard";
 
   useEffect(() => {
     if (token) localStorage.setItem(TOKEN_KEY, token);
@@ -97,6 +99,8 @@ export default function App() {
       />
       {isVerify ? (
         <VerifyView />
+      ) : isLeaderboard ? (
+        <LeaderboardView />
       ) : (
         <>
           <Hero />
@@ -141,6 +145,12 @@ function Header({ token, onSignOut }: { token: string; onSignOut: () => void }) 
         </p>
       </div>
       <nav style={{ display: "flex", gap: 12, alignItems: "center" }}>
+        <a
+          href="#leaderboard"
+          style={{ color: PALETTE.link, fontSize: "0.8rem", textDecoration: "none" }}
+        >
+          Leaderboard
+        </a>
         <a
           href="#verify"
           style={{ color: PALETTE.link, fontSize: "0.8rem", textDecoration: "none" }}

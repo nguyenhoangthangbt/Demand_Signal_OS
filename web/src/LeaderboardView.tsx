@@ -1,0 +1,470 @@
+// LeaderboardView — the DSO forecaster leaderboard workbench (Phase 3).
+//
+// Self-serve "compare-and-pick" over the v0.1.5 leaderboard API: paste a demand
+// history + four bounded knobs, run, and see every registered forecaster ranked
+// PROBABILISTICALLY (CRPS + interval coverage) with a beats-naive credibility
+// badge. The winner emits a bundle-ready ForecastBundle for the downstream e2e
+// engines. This is the ML-capability enrichment surface — NOT an AutoML
+// competitor: only the engine's own audited methods, four knobs, deterministic.
+//
+// Inline-styled to match App.tsx PALETTE. Hits the DSO leaderboard API
+// (VITE_DSO_API_BASE ?? "/api/v1"); tier key via X-API-Key.
+
+import { useState } from "react";
+
+const API_BASE: string =
+  (import.meta.env.VITE_DSO_API_BASE as string | undefined) ?? "/api/v1";
+
+const PALETTE = {
+  bg: "#0f172a",
+  bgPanel: "#1e293b",
+  border: "#334155",
+  text: "#f8fafc",
+  textMuted: "#cbd5e1",
+  textDim: "#94a3b8",
+  textFaint: "#64748b",
+  accent: "#fbbf24",
+  accentText: "#0f172a",
+  link: "#7dd3fc",
+  ok: "#86efac",
+  okBg: "#14321f",
+  okBorder: "#166534",
+  warn: "#fcd34d",
+  error: "#fca5a5",
+  errorBg: "#3f1d1d",
+  errorBorder: "#7f1d1d",
+  winnerBg: "#1e3a5f",
+} as const;
+
+interface LeaderboardEntry {
+  method_id: string;
+  rank: number;
+  is_benchmark: boolean;
+  crps: number;
+  coverage_50: number | null;
+  coverage_90: number | null;
+  beats_all_benchmarks: boolean | null;
+}
+
+interface LeaderboardResult {
+  entries: LeaderboardEntry[];
+  winner_method_id: string;
+  winner_is_benchmark: boolean;
+  n_methods: number;
+  content_hash: string;
+}
+
+const SAMPLE_HISTORY = Array.from({ length: 48 }, (_, i) =>
+  Math.round(10 + 3 * Math.sin((2 * Math.PI * i) / 7) + (i % 3)),
+).join(", ");
+
+function parseHistory(raw: string): number[] {
+  return raw
+    .split(/[\s,]+/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0)
+    .map(Number)
+    .filter((n) => Number.isFinite(n));
+}
+
+export default function LeaderboardView() {
+  const [apiKey, setApiKey] = useState("");
+  const [historyRaw, setHistoryRaw] = useState(SAMPLE_HISTORY);
+  const [horizon, setHorizon] = useState(4);
+  const [seasonLength, setSeasonLength] = useState(7);
+  const [intermittent, setIntermittent] = useState<"auto" | "on" | "off">("auto");
+  const [nWindows, setNWindows] = useState(2);
+
+  const [status, setStatus] = useState<"idle" | "running" | "complete" | "failed">("idle");
+  const [error, setError] = useState("");
+  const [result, setResult] = useState<LeaderboardResult | null>(null);
+  const [runId, setRunId] = useState("");
+  const [receipt, setReceipt] = useState<{ calibration_id: string; signature: string } | null>(
+    null,
+  );
+
+  function authHeaders(json = false): Record<string, string> {
+    const h: Record<string, string> = {};
+    if (apiKey.trim()) h["X-API-Key"] = apiKey.trim();
+    if (json) h["Content-Type"] = "application/json";
+    return h;
+  }
+
+  async function run() {
+    setStatus("running");
+    setError("");
+    setResult(null);
+    setReceipt(null);
+    const history = parseHistory(historyRaw);
+    if (history.length < seasonLength + horizon) {
+      setError(`Need at least ${seasonLength + horizon} data points; got ${history.length}.`);
+      setStatus("failed");
+      return;
+    }
+    try {
+      const submit = await fetch(`${API_BASE}/forecast/leaderboard`, {
+        method: "POST",
+        headers: authHeaders(true),
+        body: JSON.stringify({
+          sku_id: "WORKBENCH",
+          location_id: "WORKBENCH",
+          history,
+          bucket_period: "day",
+          start_date: "2026-01-01",
+          horizon,
+          season_length: seasonLength,
+          intermittent_mode: intermittent,
+          n_windows: nWindows,
+          min_train_size: Math.max(seasonLength * 2, history.length - nWindows * horizon - 1),
+          seed: 42,
+        }),
+      });
+      if (submit.status === 401) throw new Error("Tier key rejected (401). Check your X-API-Key.");
+      if (!submit.ok) throw new Error(`Submit failed: ${submit.status}`);
+      const { run_id } = await submit.json();
+      setRunId(run_id);
+
+      // Poll until complete.
+      for (let i = 0; i < 120; i++) {
+        await new Promise((res) => setTimeout(res, 1500));
+        const poll = await fetch(`${API_BASE}/forecast/leaderboard/${run_id}`, {
+          headers: authHeaders(),
+        });
+        const body = await poll.json();
+        if (body.status === "complete") {
+          setResult(body.result as LeaderboardResult);
+          setStatus("complete");
+          return;
+        }
+        if (body.status === "failed") {
+          throw new Error(body.error ?? "run failed");
+        }
+      }
+      throw new Error("timed out waiting for the run");
+    } catch (e) {
+      setError((e as Error).message);
+      setStatus("failed");
+    }
+  }
+
+  async function fetchReceipt() {
+    if (!runId) return;
+    try {
+      const r = await fetch(`${API_BASE}/forecast/leaderboard/${runId}/receipt`, {
+        headers: authHeaders(),
+      });
+      if (!r.ok) throw new Error(`receipt failed: ${r.status}`);
+      const rec = await r.json();
+      setReceipt({ calibration_id: rec.calibration_id, signature: rec.signature });
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  return (
+    <section style={{ padding: "2rem 1.5rem", maxWidth: 920, margin: "0 auto" }}>
+      <h2 style={{ margin: 0, fontSize: "1.5rem", color: PALETTE.text }}>
+        Forecaster leaderboard
+      </h2>
+      <p style={{ marginTop: 8, fontSize: "0.9rem", color: PALETTE.textDim, lineHeight: 1.6, maxWidth: 700 }}>
+        Run every registered forecaster on your demand history and rank them{" "}
+        <strong style={{ color: PALETTE.textMuted }}>probabilistically</strong> — by CRPS and
+        interval coverage, not point error. Each candidate is gated against the naive
+        benchmarks: a model can rank #1 and still be flagged{" "}
+        <em>"doesn't beat naive."</em> The winner ships a bundle-ready forecast into
+        PlanningOS / SimOS / O2C.
+      </p>
+
+      {/* Config panel */}
+      <div style={panelStyle}>
+        <label style={labelStyle}>Tier key (X-API-Key)</label>
+        <input
+          type="password"
+          placeholder="dso_live_… (leave blank in local dev)"
+          value={apiKey}
+          onChange={(e) => setApiKey(e.target.value)}
+          style={inputStyle}
+        />
+
+        <label style={{ ...labelStyle, marginTop: 12 }}>
+          Demand history (comma / newline separated)
+        </label>
+        <textarea
+          value={historyRaw}
+          onChange={(e) => setHistoryRaw(e.target.value)}
+          style={{ ...inputStyle, height: 90, fontFamily: "monospace", fontSize: "0.75rem" }}
+        />
+        <p style={{ margin: "4px 0 0 0", fontSize: "0.7rem", color: PALETTE.textFaint }}>
+          {parseHistory(historyRaw).length} points parsed
+        </p>
+
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 16, marginTop: 14 }}>
+          <Knob label="Horizon" value={horizon} setValue={setHorizon} min={1} />
+          <Knob label="Season length" value={seasonLength} setValue={setSeasonLength} min={1} />
+          <Knob label="Backtest windows" value={nWindows} setValue={setNWindows} min={1} />
+          <div>
+            <label style={labelStyle}>Intermittent</label>
+            <select
+              value={intermittent}
+              onChange={(e) => setIntermittent(e.target.value as "auto" | "on" | "off")}
+              style={{ ...inputStyle, width: 110 }}
+            >
+              <option value="auto">auto</option>
+              <option value="on">on</option>
+              <option value="off">off</option>
+            </select>
+          </div>
+        </div>
+
+        <button
+          onClick={run}
+          disabled={status === "running"}
+          style={{
+            marginTop: 16,
+            padding: "0.55rem 1.2rem",
+            backgroundColor: PALETTE.accent,
+            color: PALETTE.accentText,
+            border: "none",
+            borderRadius: 4,
+            cursor: status === "running" ? "wait" : "pointer",
+            fontWeight: 700,
+            fontSize: "0.9rem",
+          }}
+        >
+          {status === "running" ? "Running leaderboard…" : "▶ Run leaderboard"}
+        </button>
+        {status === "running" && (
+          <p style={{ margin: "8px 0 0 0", fontSize: "0.78rem", color: PALETTE.textDim }}>
+            Fitting every method through walk-forward backtest (GBM trains 7 quantile
+            models per window — this can take a minute).
+          </p>
+        )}
+        {error && (
+          <div
+            style={{
+              marginTop: 12,
+              padding: "0.6rem 0.8rem",
+              backgroundColor: PALETTE.errorBg,
+              border: `1px solid ${PALETTE.errorBorder}`,
+              borderRadius: 6,
+              color: PALETTE.error,
+              fontSize: "0.82rem",
+            }}
+          >
+            {error}
+          </div>
+        )}
+      </div>
+
+      {result && <Results result={result} receipt={receipt} onFetchReceipt={fetchReceipt} />}
+    </section>
+  );
+}
+
+function Results({
+  result,
+  receipt,
+  onFetchReceipt,
+}: {
+  result: LeaderboardResult;
+  receipt: { calibration_id: string; signature: string } | null;
+  onFetchReceipt: () => void;
+}) {
+  const winnerEntry = result.entries.find((e) => e.method_id === result.winner_method_id);
+  return (
+    <div style={{ marginTop: 24 }}>
+      {/* Winner banner */}
+      <div
+        style={{
+          padding: "0.9rem 1.1rem",
+          borderRadius: 8,
+          backgroundColor: result.winner_is_benchmark ? PALETTE.errorBg : PALETTE.okBg,
+          border: `1px solid ${result.winner_is_benchmark ? PALETTE.errorBorder : PALETTE.okBorder}`,
+          marginBottom: 16,
+        }}
+      >
+        {result.winner_is_benchmark ? (
+          <p style={{ margin: 0, color: PALETTE.error, fontSize: "0.9rem" }}>
+            ⚠ No forecaster beat the naive benchmarks. Recommending the safest baseline:{" "}
+            <strong>{result.winner_method_id}</strong>. Your series may be too short or too
+            noisy for a model to add value — that's an honest answer, not a failure.
+          </p>
+        ) : (
+          <p style={{ margin: 0, color: PALETTE.ok, fontSize: "0.95rem" }}>
+            ✓ Winner: <strong>{result.winner_method_id}</strong> — beats all naive benchmarks
+            (CRPS {winnerEntry?.crps.toFixed(3)}, 90% coverage{" "}
+            {winnerEntry?.coverage_90 != null ? `${(winnerEntry.coverage_90 * 100).toFixed(0)}%` : "—"}).
+          </p>
+        )}
+      </div>
+
+      {/* Ranked table */}
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.82rem" }}>
+        <thead>
+          <tr style={{ color: PALETTE.textDim, textAlign: "left" }}>
+            <th style={thStyle}>#</th>
+            <th style={thStyle}>Method</th>
+            <th style={thStyle}>CRPS ↓</th>
+            <th style={thStyle}>50% cov</th>
+            <th style={thStyle}>90% cov</th>
+            <th style={thStyle}>Trust</th>
+          </tr>
+        </thead>
+        <tbody>
+          {result.entries.map((e) => {
+            const isWinner = e.method_id === result.winner_method_id;
+            return (
+              <tr
+                key={e.method_id}
+                style={{
+                  backgroundColor: isWinner ? PALETTE.winnerBg : "transparent",
+                  borderBottom: `1px solid ${PALETTE.border}`,
+                }}
+              >
+                <td style={tdStyle}>{e.rank}</td>
+                <td style={{ ...tdStyle, fontFamily: "monospace", fontWeight: isWinner ? 700 : 400 }}>
+                  {e.method_id}
+                  {e.is_benchmark && (
+                    <span style={{ color: PALETTE.textFaint, fontSize: "0.7rem" }}> (benchmark)</span>
+                  )}
+                </td>
+                <td style={tdStyle}>{e.crps.toFixed(3)}</td>
+                <td style={tdStyle}>
+                  {e.coverage_50 != null ? `${(e.coverage_50 * 100).toFixed(0)}%` : "—"}
+                </td>
+                <td style={tdStyle}>
+                  {e.coverage_90 != null ? `${(e.coverage_90 * 100).toFixed(0)}%` : "—"}
+                </td>
+                <td style={tdStyle}>
+                  {e.is_benchmark ? (
+                    <span style={{ color: PALETTE.textFaint }}>gate</span>
+                  ) : e.beats_all_benchmarks ? (
+                    <span style={badge(PALETTE.ok, PALETTE.okBg, PALETTE.okBorder)}>beats naive</span>
+                  ) : (
+                    <span style={badge(PALETTE.error, PALETTE.errorBg, PALETTE.errorBorder)}>
+                      below naive
+                    </span>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+
+      {/* Reproducibility + receipt */}
+      <div style={{ marginTop: 16, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+        <span style={{ fontSize: "0.75rem", color: PALETTE.textDim }}>
+          {result.n_methods} methods · reproducibility hash{" "}
+          <code style={{ color: PALETTE.textMuted }}>{result.content_hash}</code>
+        </span>
+        <button
+          onClick={onFetchReceipt}
+          style={{
+            padding: "5px 12px",
+            fontSize: "0.78rem",
+            backgroundColor: PALETTE.link,
+            color: PALETTE.bg,
+            border: "none",
+            borderRadius: 4,
+            cursor: "pointer",
+            fontWeight: 700,
+          }}
+        >
+          Get signed receipt
+        </button>
+      </div>
+      {receipt && (
+        <div
+          style={{
+            marginTop: 10,
+            padding: "0.6rem 0.8rem",
+            backgroundColor: PALETTE.bgPanel,
+            border: `1px solid ${PALETTE.border}`,
+            borderRadius: 6,
+            fontSize: "0.75rem",
+            color: PALETTE.textMuted,
+            wordBreak: "break-all",
+          }}
+        >
+          <strong style={{ color: PALETTE.ok }}>Signed ✓</strong> {receipt.calibration_id}
+          <br />
+          <span style={{ color: PALETTE.textFaint }}>HMAC signature:</span> {receipt.signature}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Knob({
+  label,
+  value,
+  setValue,
+  min,
+}: {
+  label: string;
+  value: number;
+  setValue: (n: number) => void;
+  min: number;
+}) {
+  return (
+    <div>
+      <label style={labelStyle}>{label}</label>
+      <input
+        type="number"
+        min={min}
+        value={value}
+        onChange={(e) => setValue(Math.max(min, Number(e.target.value) || min))}
+        style={{ ...inputStyle, width: 90 }}
+      />
+    </div>
+  );
+}
+
+const panelStyle: React.CSSProperties = {
+  marginTop: 20,
+  padding: "1.25rem",
+  backgroundColor: PALETTE.bgPanel,
+  border: `1px solid ${PALETTE.border}`,
+  borderRadius: 8,
+};
+
+const labelStyle: React.CSSProperties = {
+  display: "block",
+  fontSize: "0.72rem",
+  color: PALETTE.textDim,
+  marginBottom: 4,
+  textTransform: "uppercase",
+  letterSpacing: "0.04em",
+};
+
+const inputStyle: React.CSSProperties = {
+  width: "100%",
+  padding: "0.45rem",
+  borderRadius: 4,
+  border: `1px solid ${PALETTE.border}`,
+  backgroundColor: PALETTE.bg,
+  color: PALETTE.text,
+  fontSize: "0.85rem",
+  boxSizing: "border-box",
+};
+
+const thStyle: React.CSSProperties = {
+  padding: "0.4rem 0.6rem",
+  borderBottom: `1px solid ${PALETTE.border}`,
+  fontWeight: 600,
+};
+
+const tdStyle: React.CSSProperties = { padding: "0.45rem 0.6rem", color: PALETTE.text };
+
+function badge(color: string, bg: string, border: string): React.CSSProperties {
+  return {
+    fontSize: "0.68rem",
+    fontWeight: 700,
+    padding: "2px 7px",
+    borderRadius: 3,
+    color,
+    backgroundColor: bg,
+    border: `1px solid ${border}`,
+  };
+}
