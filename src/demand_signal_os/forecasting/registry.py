@@ -17,6 +17,7 @@ Method groups:
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -33,15 +34,26 @@ from demand_signal_os.forecasting.intermittent.stubs import (
     TSBMethod,
 )
 from demand_signal_os.forecasting.protocol import ForecastMethod
-from demand_signal_os.leaderboard.types import LeaderboardConfig
+from demand_signal_os.forecasting.statistical import (
+    AutoARIMAMethod,
+    AutoCESMethod,
+    AutoThetaMethod,
+)
+
+if TYPE_CHECKING:
+    # Type-only import — avoids a runtime cycle (leaderboard.* imports registry).
+    # The builders use the config via duck typing, so the class isn't needed
+    # at runtime.
+    from demand_signal_os.leaderboard.types import LeaderboardConfig
 
 # Threshold above which a series is treated as intermittent (zero fraction).
 INTERMITTENT_ZERO_FRACTION = 0.30
 
 BENCHMARK_IDS: tuple[str, ...] = ("naive_seasonal", "ses", "moving_average")
 INTERMITTENT_IDS: tuple[str, ...] = ("croston_opt", "tsb", "sba")
-# Continuous-demand forecasters always in the panel.
-CONTINUOUS_FORECASTER_IDS: tuple[str, ...] = ("ets", "gbm")
+# Continuous-demand forecasters always in the panel. Expanded 2026-06-14 with
+# the M-competition statistical trio (arima/theta/ces) alongside ets + gbm.
+CONTINUOUS_FORECASTER_IDS: tuple[str, ...] = ("ets", "gbm", "arima", "theta", "ces")
 
 # Builders: method_id -> (config -> ForecastMethod). Each threads the four
 # user knobs; engine-internal hyperparameters stay at audited defaults.
@@ -50,6 +62,15 @@ _BUILDERS: dict[str, Callable[[LeaderboardConfig], ForecastMethod]] = {
         season_length=c.season_length, min_quantile_spread=c.min_quantile_spread
     ),
     "gbm": lambda c: GBMQuantileMethod(min_quantile_spread=c.min_quantile_spread),
+    "arima": lambda c: AutoARIMAMethod(
+        season_length=c.season_length, min_quantile_spread=c.min_quantile_spread
+    ),
+    "theta": lambda c: AutoThetaMethod(
+        season_length=c.season_length, min_quantile_spread=c.min_quantile_spread
+    ),
+    "ces": lambda c: AutoCESMethod(
+        season_length=c.season_length, min_quantile_spread=c.min_quantile_spread
+    ),
     "croston_opt": lambda c: CrostonOptimizedMethod(
         min_quantile_spread=c.min_quantile_spread
     ),
