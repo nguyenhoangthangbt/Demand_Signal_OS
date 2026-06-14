@@ -120,10 +120,16 @@ def _build_config(body: LeaderboardRunRequest) -> Any:
 
 
 def _execute(run_id: str, body: LeaderboardRunRequest) -> None:
-    """Background worker — runs the orchestrator and stores the result."""
-    from demand_signal_os.leaderboard import orchestrate
+    """Background worker — runs the orchestrator and stores the result.
 
+    The heavy-stack import is INSIDE the try: if the forecasting deps are
+    missing (e.g. a light image), the run must surface as ``failed`` with a
+    clear error, never hang silently at ``queued``.
+    """
+    _RUNS[run_id].update(status="running")
     try:
+        from demand_signal_os.leaderboard import orchestrate
+
         actuals = _build_actuals(body)
         config = _build_config(body)
         result = orchestrate(actuals, config)

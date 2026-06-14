@@ -24,6 +24,11 @@ _CORS_ORIGINS = [
     "http://localhost:5176",
     "http://localhost:8092",
     "https://sim-os.ai",
+    # Canonical deployed spelling is HYPHENATED (matches the live web SPA at
+    # demand-signal.sim-os.ai + doctor PUBLIC_URL). Non-hyphen kept as an alias
+    # so an older reference doesn't break.
+    "https://demand-signal.sim-os.ai",
+    "https://demand-signal-api.sim-os.ai",
     "https://demandsignal.sim-os.ai",
     "https://demandsignal-api.sim-os.ai",
     "https://plan2cash.sim-os.ai",
