@@ -15,6 +15,9 @@ import LeaderboardView from "./LeaderboardView";
 import VerifyView from "./VerifyView";
 
 const API_BASE = "https://plan2cash-api.sim-os.ai";
+// DSO's own API (leaderboard + the v0.2 single-series forecast). Same base the
+// LeaderboardView uses; absolute in prod via VITE_DSO_API_BASE, "/api/v1" in dev.
+const DSO_API: string = (import.meta.env.VITE_DSO_API_BASE as string | undefined) ?? "/api/v1";
 const TOKEN_KEY = "dso_token_v1";
 
 // Tiny hash-based view router (App.tsx has no React Router). The Verify trust
@@ -621,22 +624,52 @@ function WorkbenchSection({ token }: { token: string }) {
   );
 }
 
+type Band = { h: number; q05: number; q50: number; q95: number };
+
 function ForecastPreview() {
+  // A representative demand series; the real forecast band below is computed
+  // live from it by the DSO engine (single-method ETS fit), not hardcoded.
   const HISTORY = [42, 48, 55, 51, 58, 67, 73, 71, 65, 60, 68, 72];
-  const FORECAST = [
-    { h: 1, q05: 60, q50: 73, q95: 86 },
-    { h: 2, q05: 56, q50: 75, q95: 94 },
-    { h: 3, q05: 52, q50: 78, q95: 104 },
-    { h: 4, q05: 48, q50: 80, q95: 112 },
-    { h: 5, q05: 45, q50: 83, q95: 121 },
-    { h: 6, q05: 42, q50: 85, q95: 128 },
-    { h: 7, q05: 38, q50: 88, q95: 138 },
-    { h: 8, q05: 34, q50: 90, q95: 146 },
-  ];
+  const [FORECAST, setForecast] = useState<Band[]>([]);
+  const [err, setErr] = useState<string | null>(null);
   const [hover, setHover] = useState<number | null>(null);
 
+  useEffect(() => {
+    let active = true;
+    fetch(`${DSO_API}/forecast/single`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        history: HISTORY,
+        horizon: 8,
+        season_length: 7,
+        method_id: "ets",
+        band: true,
+      }),
+    })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((d) => {
+        if (active)
+          setForecast(
+            (d.band ?? []).map((b: Band) => ({
+              h: b.h,
+              q05: Math.round(b.q05 * 10) / 10,
+              q50: Math.round(b.q50 * 10) / 10,
+              q95: Math.round(b.q95 * 10) / 10,
+            })),
+          );
+      })
+      .catch((e) => {
+        if (active) setErr(String(e?.message ?? e));
+      });
+    return () => {
+      active = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const total = HISTORY.length + FORECAST.length;
-  const maxY = 160;
+  const maxY = Math.ceil(Math.max(160, ...HISTORY, ...FORECAST.map((f) => f.q95)) * 1.05);
   const padding = { top: 20, right: 16, bottom: 26, left: 32 };
   const w = 720;
   const h = 280;
@@ -673,12 +706,20 @@ function ForecastPreview() {
   return (
     <section style={{ padding: "0 1.5rem 1.25rem", maxWidth: 900, margin: "0 auto" }}>
       <h3 style={{ fontSize: "1.1rem", marginBottom: 6 }}>
-        Sample probabilistic forecast (synthetic v0.1)
+        Probabilistic forecast{" "}
+        <span style={{ fontSize: "0.7rem", color: PALETTE.ok, fontWeight: 400 }}>· live</span>
       </h3>
       <p style={{ margin: 0, marginBottom: 16, fontSize: "0.85rem", color: PALETTE.textDim }}>
-        Solid line: q50 (median). Light band: q05–q95 (90% prediction interval).
-        The band widens with horizon as it should — uncertainty propagated, not hidden.
+        Solid line: q50 (median). Light band: q05 to q95 (the 90% prediction
+        interval). Computed live by the engine from the series below via a
+        single-method ETS fit, not a hardcoded sample. The band widens with
+        horizon, so uncertainty propagates rather than hiding.
       </p>
+      {err && (
+        <p style={{ margin: "0 0 12px 0", fontSize: "0.8rem", color: PALETTE.warn }}>
+          Live forecast unavailable ({err}); showing history only.
+        </p>
+      )}
       <div
         style={{
           backgroundColor: PALETTE.bgPanel,
@@ -784,73 +825,10 @@ function ForecastPreview() {
           )}
         </svg>
       </div>
-      <DriftGauge drift={1.42} threshold={1.5} />
+      {/* Drift is a monitoring signal (current vs training accuracy over time),
+          not a single-forecast output — wired to a real value in a follow-up,
+          not shown here as a hardcoded number. */}
     </section>
-  );
-}
-
-function DriftGauge({ drift, threshold }: { drift: number; threshold: number }) {
-  const pct = Math.min(100, (drift / (threshold * 1.5)) * 100);
-  const state =
-    drift >= threshold ? "halted" : drift >= threshold * 0.8 ? "watch" : "ok";
-  const color =
-    state === "halted" ? PALETTE.error : state === "watch" ? PALETTE.warn : PALETTE.ok;
-  return (
-    <div
-      style={{
-        marginTop: 16,
-        padding: "0.875rem 1rem",
-        backgroundColor: PALETTE.bgPanel,
-        border: `1px solid ${PALETTE.border}`,
-        borderRadius: 8,
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 8 }}>
-        <p style={{ margin: 0, fontSize: "0.95rem", color: PALETTE.text }}>
-          Drift signal:{" "}
-          <span style={{ color, fontWeight: 700 }}>
-            {drift.toFixed(2)}× baseline CRPS
-          </span>
-        </p>
-        <span
-          style={{
-            fontSize: "0.65rem",
-            color,
-            fontWeight: 700,
-            letterSpacing: "0.05em",
-            textTransform: "uppercase",
-          }}
-        >
-          {state}
-        </span>
-      </div>
-      <div
-        style={{
-          height: 6,
-          backgroundColor: PALETTE.bg,
-          borderRadius: 3,
-          overflow: "hidden",
-          position: "relative",
-        }}
-      >
-        <div style={{ width: `${pct}%`, height: "100%", backgroundColor: color }} />
-        <div
-          style={{
-            position: "absolute",
-            left: `${(threshold / (threshold * 1.5)) * 100}%`,
-            top: 0,
-            bottom: 0,
-            width: 1,
-            backgroundColor: PALETTE.text,
-          }}
-          title={`halt threshold ${threshold.toFixed(1)}×`}
-        />
-      </div>
-      <p style={{ margin: "6px 0 0 0", fontSize: "0.7rem", color: PALETTE.textDim }}>
-        Halt thresholds: 1.5× operational, 2.0× tactical, 3.0× strategic.
-        Plan2Cash consumes this signal in the closed-loop critic.
-      </p>
-    </div>
   );
 }
 

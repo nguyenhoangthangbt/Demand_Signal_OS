@@ -41,6 +41,7 @@ def create_app() -> Any:
     from fastapi import FastAPI
     from fastapi.middleware.cors import CORSMiddleware
 
+    from demand_signal_os.api.forecast_routes import router as forecast_router
     from demand_signal_os.api.leaderboard_routes import router as leaderboard_router
     from demand_signal_os.api.receipt_routes import router as receipt_router
 
@@ -69,5 +70,6 @@ def create_app() -> Any:
 
     app.include_router(receipt_router, prefix="/api/v1")
     app.include_router(leaderboard_router, prefix="/api/v1")
+    app.include_router(forecast_router, prefix="/api/v1")
 
     return app
