@@ -40,7 +40,8 @@ from demand_signal_os.leaderboard.types import (
     LeaderboardEntry,
     LeaderboardResult,
 )
-from demand_signal_os.ops_schemas import DemandActual
+from demand_signal_os.forecasting.protocol import ForecastRequest
+from demand_signal_os.ops_schemas import DemandActual, ForecastBundle, TimeBucket
 
 _HASH_PRECISION = 6  # decimals retained in the reproducibility digest
 
@@ -169,3 +170,38 @@ def orchestrate(
         n_methods=len(entries),
         content_hash=_content_hash(entries),
     )
+
+
+def _next_buckets(last: TimeBucket, horizon: int) -> list[TimeBucket]:
+    """Extend the series cadence forward by ``horizon`` buckets."""
+    delta = last.end - last.start
+    buckets: list[TimeBucket] = []
+    start = last.end
+    for _ in range(horizon):
+        end = start + delta
+        buckets.append(TimeBucket(period=last.period, start=start, end=end))
+        start = end
+    return buckets
+
+
+def fit_winner_bundle(
+    actuals: list[DemandActual], config: LeaderboardConfig, winner_method_id: str
+) -> ForecastBundle:
+    """Fit the winning method on the FULL history and emit a bundle-ready
+    ``ForecastBundle`` for the downstream e2e engines (PlanningOS / SimOS /
+    O2C). This is the enrichment hand-off: the leaderboard picks, this ships.
+    """
+    method = build_method(winner_method_id, config)
+    history = [r.units_sold for r in actuals]
+    horizon_buckets = _next_buckets(actuals[-1].bucket, config.horizon)
+    request = ForecastRequest(
+        sku_id=config.sku_id,
+        location_id=config.location_id,
+        history=history,
+        history_buckets=[r.bucket for r in actuals],
+        horizon_buckets=horizon_buckets,
+        horizon_label=config.horizon_label,
+        seed=config.seed,
+        data_cut_timestamp=config.data_cut_timestamp,
+    )
+    return method.fit_predict(request)

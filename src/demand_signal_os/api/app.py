@@ -1,9 +1,10 @@
-"""DemandSignalOS thin trust-gate FastAPI app.
+"""DemandSignalOS FastAPI app.
 
-``create_app()`` returns a FastAPI app that exposes ONLY the normalized trust
-gate (DECISIONS_LOG §P #65): a health probe + the signed-receipt routes. No
-auth (mirrors PlanningOS). LIGHT by design — does not import the heavy DSO
-forecasting stack.
+``create_app()`` returns a FastAPI app exposing: a health probe, the public
+trust-gate signed-receipt routes (DECISIONS_LOG §P #65), and the auth-gated
+forecast-leaderboard routes (the v0.1.5 API extraction). The leaderboard
+handlers import the heavy DSO forecasting stack lazily so module import stays
+light; the trust gate remains public, the leaderboard is tier-key gated.
 
 Run locally::
 
@@ -35,15 +36,17 @@ def create_app() -> Any:
     from fastapi import FastAPI
     from fastapi.middleware.cors import CORSMiddleware
 
+    from demand_signal_os.api.leaderboard_routes import router as leaderboard_router
     from demand_signal_os.api.receipt_routes import router as receipt_router
 
     app = FastAPI(
-        title="DemandSignalOS — Trust Gate",
+        title="DemandSignalOS — API",
         description=(
-            "Thin trust-gate surface for DemandSignalOS: signed forecast-trust "
-            "receipts + self-auditable validation workbook (DECISIONS_LOG §P #65)."
+            "DemandSignalOS surface: public signed forecast-trust receipts "
+            "(DECISIONS_LOG §P #65) + auth-gated forecaster leaderboard "
+            "(probabilistic compare-and-pick for the e2e bundle)."
         ),
-        version="0.1.0",
+        version="0.1.5",
     )
 
     app.add_middleware(
@@ -60,5 +63,6 @@ def create_app() -> Any:
         return {"status": "ok", "engine": "demandsignal"}
 
     app.include_router(receipt_router, prefix="/api/v1")
+    app.include_router(leaderboard_router, prefix="/api/v1")
 
     return app

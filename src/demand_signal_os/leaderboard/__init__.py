@@ -7,7 +7,7 @@ Public surface:
 
 from __future__ import annotations
 
-from demand_signal_os.leaderboard.orchestrator import orchestrate
+from demand_signal_os.leaderboard.orchestrator import fit_winner_bundle, orchestrate
 from demand_signal_os.leaderboard.types import (
     CANONICAL_QUANTILES,
     LeaderboardConfig,
@@ -20,5 +20,6 @@ __all__ = [
     "LeaderboardConfig",
     "LeaderboardEntry",
     "LeaderboardResult",
+    "fit_winner_bundle",
     "orchestrate",
 ]
