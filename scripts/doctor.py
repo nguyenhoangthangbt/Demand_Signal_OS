@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import re
 import subprocess
 import sys
 import time
@@ -18,7 +19,7 @@ from pathlib import Path
 PLATFORM = "demand_signal"
 LABEL = "DemandSignalOS"
 PUBLIC_URL = "https://demand-signal.sim-os.ai"
-API_URL = None  # library only at v0.1
+API_URL = "https://demand-signal-api.sim-os.ai"  # full API live since 2026-06-14
 
 
 def _run_curl(url: str, timeout: int) -> tuple[int, str]:
@@ -80,17 +81,19 @@ def check_container_health(timeout: int, repo_root: Path) -> dict:
 
 
 def check_api_surface(timeout: int, repo_root: Path) -> dict:
-    """DSO at v0.1 has no API. Verify library import surface instead.
+    """Two layers: (1) library import surface, (2) the LIVE forecast API.
 
-    Imports the actual class locations (calibrator + ets submodules)
-    discovered 2026-06-11. Previous version assumed re-exports at the
-    subpackage level that didn't exist.
+    The full API (trust gate + forecaster leaderboard) went live 2026-06-14 at
+    API_URL. We verify the library imports clean AND that the deployed API is
+    healthy and the compute-heavy leaderboard route is auth-gated (401 without
+    a key proves both that the route exists and that DSO_API_KEYS is set).
     """
     try:
         proc = subprocess.run(
             ["python", "-c",
              "from demand_signal_os.calibration.calibrator import DemandSignalCalibrator; "
              "from demand_signal_os.forecasting.ets import ETSMethod; "
+             "from demand_signal_os.leaderboard import orchestrate; "
              "from demand_signal_os import accuracy; "
              "print('OK')"],
             cwd=repo_root, capture_output=True, text=True, timeout=15,
@@ -100,16 +103,35 @@ def check_api_surface(timeout: int, repo_root: Path) -> dict:
                     "reason": "library import failed",
                     "evidence": {"stderr": proc.stderr[:300]},
                     "reproducer": (
-                        "python -c 'from demand_signal_os.calibration.calibrator "
-                        "import DemandSignalCalibrator'"
+                        "python -c 'from demand_signal_os.leaderboard import orchestrate'"
                     )}
-        return {"name": "api_surface", "status": "GREEN",
-                "reason": "library imports clean: calibrator + ets + accuracy",
-                "evidence": {"surface": "library"}}
     except Exception as e:
         return {"name": "api_surface", "status": "RED",
                 "reason": f"import probe raised: {type(e).__name__}: {e}",
                 "evidence": None}
+
+    # Live deployed API: health + gated leaderboard route.
+    health_code, _ = _run_curl(f"{API_URL}/api/v1/health", timeout)
+    if health_code != 200:
+        return {"name": "api_surface", "status": "RED",
+                "reason": f"{API_URL}/api/v1/health returned HTTP {health_code}",
+                "evidence": {"library": "ok", "api_health": health_code},
+                "reproducer": f"curl -s {API_URL}/api/v1/health"}
+    gate_code, _ = _run_curl(f"{API_URL}/api/v1/forecast/leaderboard/lb_probe", timeout)
+    if gate_code != 401:
+        return {"name": "api_surface", "status": "RED",
+                "reason": (
+                    f"leaderboard route returned HTTP {gate_code} without a key "
+                    "(expected 401 — route missing or DSO_API_KEYS unset/open)"
+                ),
+                "evidence": {"library": "ok", "api_health": 200, "gate": gate_code},
+                "reproducer": (
+                    f"curl -s -o /dev/null -w '%{{http_code}}' "
+                    f"{API_URL}/api/v1/forecast/leaderboard/lb_probe"
+                )}
+    return {"name": "api_surface", "status": "GREEN",
+            "reason": "library imports clean + live API healthy + leaderboard gated (401)",
+            "evidence": {"surface": "library+http", "api_health": 200, "gate": 401}}
 
 
 def check_persistence(timeout: int, repo_root: Path) -> dict:
@@ -130,9 +152,27 @@ def check_customer_surface(timeout: int, repo_root: Path) -> dict:
         return {"name": "customer_surface", "status": "RED",
                 "reason": "page body missing expected DSO markers",
                 "evidence": body[:300]}
+    # Assert the LEADERBOARD build is actually deployed: the SPA is client
+    # rendered, so we fetch the main JS bundle and confirm it carries the
+    # baked leaderboard API base. A page that lacks it is a stale (pre-
+    # leaderboard) build even though the shell renders.
+    m = re.search(r"/assets/index-[A-Za-z0-9_-]+\.js", body)
+    if not m:
+        return {"name": "customer_surface", "status": "RED",
+                "reason": "could not locate main JS asset in index.html",
+                "evidence": body[:300]}
+    _, js = _run_curl(PUBLIC_URL + m.group(0), timeout)
+    if "demand-signal-api.sim-os.ai/api/v1" not in js:
+        return {"name": "customer_surface", "status": "RED",
+                "reason": (
+                    "deployed SPA bundle lacks the leaderboard API base — "
+                    "stale build without the leaderboard workbench wired"
+                ),
+                "evidence": {"asset": m.group(0)},
+                "reproducer": f"curl -s {PUBLIC_URL}{m.group(0)} | grep demand-signal-api"}
     return {"name": "customer_surface", "status": "GREEN",
-            "reason": f"{PUBLIC_URL}/ serves DSO web SPA",
-            "evidence": {"url": PUBLIC_URL}}
+            "reason": f"{PUBLIC_URL}/ serves DSO SPA with leaderboard wired to the live API",
+            "evidence": {"url": PUBLIC_URL, "asset": m.group(0)}}
 
 
 def check_smoke_test(timeout: int, repo_root: Path) -> dict:
