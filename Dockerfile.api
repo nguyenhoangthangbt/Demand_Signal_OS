@@ -1,0 +1,68 @@
+# DemandSignalOS — FULL API image (trust gate + forecaster leaderboard).
+#
+# Unlike the thin Dockerfile (trust-gate only), this image installs the
+# forecasting stack (numpy/scipy/pandas/statsforecast/lightgbm) so the
+# leaderboard endpoints (which import demand_signal_os.leaderboard at request
+# time) actually run. The trust-gate routes still work — same app.
+#
+# Build context is the platforms_os repo root (shared packages under packages/).
+#   build: docker build -f Demand_Signal_OS/Dockerfile.api -t dso-api-full .
+
+# ---------------------------------------------------------------------------
+# Stage 1: Builder
+# ---------------------------------------------------------------------------
+FROM python:3.13-slim AS builder
+
+WORKDIR /build
+
+# Local shared packages.
+COPY packages/ops_schemas/pyproject.toml ./ops_schemas_pkg/
+COPY packages/ops_schemas/src/ ./ops_schemas_pkg/src/
+COPY packages/excel_io/pyproject.toml packages/excel_io/README.md ./excel_io_pkg/
+COPY packages/excel_io/src/ ./excel_io_pkg/src/
+COPY packages/trust_gate/pyproject.toml ./trust_gate_pkg/
+COPY packages/trust_gate/src/ ./trust_gate_pkg/src/
+
+# Install local packages + fastapi/uvicorn + the forecasting stack (pinned to
+# the DSO pyproject deps). The src tree is copied (not pip-installed) onto
+# PYTHONPATH at runtime, so we install the third-party deps explicitly here.
+RUN pip install --no-cache-dir --prefix=/install \
+    "./ops_schemas_pkg/" "./excel_io_pkg/" "./trust_gate_pkg/" \
+    "fastapi" "uvicorn[standard]" \
+    "statsforecast==2.0.3" "hierarchicalforecast==1.5.1" "utilsforecast>=0.2.0,<1.0" \
+    "lightgbm>=4.0,<5.0" "numpy>=1.24,<3.0" "pandas>=2.0,<3.0" "scipy>=1.11,<2.0" \
+    "pyyaml>=6.0,<7.0"
+
+# ---------------------------------------------------------------------------
+# Stage 2: Runtime
+# ---------------------------------------------------------------------------
+FROM python:3.13-slim AS runtime
+
+LABEL maintainer="DemandSignalOS Team"
+LABEL description="DemandSignalOS — full API (trust gate + forecaster leaderboard)"
+
+# libgomp1 is required at runtime by LightGBM's shared library.
+RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN groupadd -r dso && useradd -r -g dso -d /app dso
+
+WORKDIR /app
+
+COPY --from=builder /install /usr/local
+
+# Full DSO src tree on PYTHONPATH (api + forecasting + leaderboard + ...).
+COPY Demand_Signal_OS/src/ /app/src/
+
+ENV PYTHONPATH=/app/src
+ENV PYTHONUNBUFFERED=1
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')" || exit 1
+
+USER dso
+
+EXPOSE 8000
+
+ENTRYPOINT ["uvicorn", "demand_signal_os.api.app:create_app", "--factory", \
+    "--host", "0.0.0.0", "--port", "8000"]
