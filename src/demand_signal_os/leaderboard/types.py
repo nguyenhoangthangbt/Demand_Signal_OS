@@ -27,6 +27,11 @@ CANONICAL_QUANTILES: tuple[float, ...] = (0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.
 
 IntermittentMode = Literal["auto", "on", "off"]
 HorizonLabel = Literal["operational", "tactical", "strategic"]
+# Forecaster-set selector — lets a user focus the panel (and cut runtime).
+# "all"/"full" run the whole panel; the rest narrow to a class. The 3 naive
+# benchmarks ALWAYS run regardless (the beats-naive gate). For full control,
+# pass an explicit ``methods`` allowlist (takes precedence over the class).
+ForecasterSet = Literal["all", "full", "statistical", "ml", "intermittent", "fast"]
 
 
 class LeaderboardConfig(BaseModel):
@@ -44,6 +49,11 @@ class LeaderboardConfig(BaseModel):
     season_length: int = Field(default=12, ge=1)
     quantile_levels: list[float] = Field(default_factory=lambda: list(CANONICAL_QUANTILES))
     intermittent_mode: IntermittentMode = "auto"
+    # Panel focus (default "all" = current behaviour). When a class is chosen,
+    # only that class competes; intermittent_mode is consulted only for
+    # "all"/"full". ``methods`` (explicit allowlist) overrides this when set.
+    forecaster_set: ForecasterSet = "all"
+    methods: list[str] | None = None
     seed: int = 42
     n_windows: int = Field(default=4, ge=1)
     min_train_size: int = Field(default=24, ge=1)

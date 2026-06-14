@@ -30,10 +30,10 @@ def _cfg(**kw: object) -> LeaderboardConfig:
 
 def test_orchestrate_ranks_all_selected_methods() -> None:
     result = orchestrate(_series(), _cfg())
-    # off-mode: ets, gbm + 3 benchmarks = 5
-    assert result.n_methods == 5
+    # off-mode: ets, gbm, arima, theta, ces + 3 benchmarks = 8
+    assert result.n_methods == 8
     assert {e.method_id for e in result.entries} == {
-        "ets", "gbm", *BENCHMARK_IDS,
+        "ets", "gbm", "arima", "theta", "ces", *BENCHMARK_IDS,
     }
 
 
@@ -79,7 +79,8 @@ def test_intermittent_auto_expands_panel_on_sparse_series() -> None:
     result = orchestrate(
         _series(intermittency_rate=0.5), _cfg(intermittent_mode="auto")
     )
-    assert result.n_methods == 8  # ets, gbm, 3 intermittent, 3 benchmarks
+    # ets, gbm, arima, theta, ces + 3 intermittent + 3 benchmarks = 11
+    assert result.n_methods == 11
 
 
 def test_quantile_levels_reject_non_canonical() -> None:

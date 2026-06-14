@@ -63,8 +63,8 @@ def test_poll_returns_ranked_result(client: TestClient, completed_run: str) -> N
     body = resp.json()
     assert body["status"] == "complete"
     result = body["result"]
-    # off-mode: ets, gbm + 3 benchmarks
-    assert result["n_methods"] == 5
+    # off-mode: ets, gbm, arima, theta, ces + 3 benchmarks
+    assert result["n_methods"] == 8
     ranks = [e["rank"] for e in result["entries"]]
     assert ranks == sorted(ranks)
     assert result["entries"][0]["rank"] == 1

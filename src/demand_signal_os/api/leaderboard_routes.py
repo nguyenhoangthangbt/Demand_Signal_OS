@@ -47,6 +47,9 @@ class LeaderboardRunRequest(BaseModel):
     horizon: int = Field(default=10, ge=1)
     season_length: int = Field(default=12, ge=1)
     intermittent_mode: Literal["auto", "on", "off"] = "auto"
+    # Panel focus (cuts runtime): a class, or an explicit forecaster allowlist.
+    forecaster_set: Literal["all", "full", "statistical", "ml", "intermittent", "fast"] = "all"
+    methods: list[str] | None = None
     quantile_levels: list[float] | None = None
     # Engine controls (sensible defaults):
     seed: int = 42
@@ -107,6 +110,8 @@ def _build_config(body: LeaderboardRunRequest) -> Any:
         horizon=body.horizon,
         season_length=body.season_length,
         intermittent_mode=body.intermittent_mode,
+        forecaster_set=body.forecaster_set,
+        methods=body.methods,
         seed=body.seed,
         n_windows=body.n_windows,
         min_train_size=body.min_train_size,

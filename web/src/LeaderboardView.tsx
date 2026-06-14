@@ -73,6 +73,9 @@ export default function LeaderboardView() {
   const [horizon, setHorizon] = useState(4);
   const [seasonLength, setSeasonLength] = useState(7);
   const [intermittent, setIntermittent] = useState<"auto" | "on" | "off">("auto");
+  const [forecasterSet, setForecasterSet] = useState<
+    "all" | "statistical" | "ml" | "intermittent" | "fast"
+  >("all");
   const [nWindows, setNWindows] = useState(2);
 
   const [status, setStatus] = useState<"idle" | "running" | "complete" | "failed">("idle");
@@ -114,6 +117,7 @@ export default function LeaderboardView() {
           horizon,
           season_length: seasonLength,
           intermittent_mode: intermittent,
+          forecaster_set: forecasterSet,
           n_windows: nWindows,
           min_train_size: Math.max(seasonLength * 2, history.length - nWindows * horizon - 1),
           seed: 42,
@@ -212,6 +216,25 @@ export default function LeaderboardView() {
               <option value="auto">auto</option>
               <option value="on">on</option>
               <option value="off">off</option>
+            </select>
+          </div>
+          <div>
+            <label style={labelStyle}>Forecaster set</label>
+            <select
+              value={forecasterSet}
+              onChange={(e) =>
+                setForecasterSet(
+                  e.target.value as "all" | "statistical" | "ml" | "intermittent" | "fast",
+                )
+              }
+              style={{ ...inputStyle, width: 150 }}
+              title="Narrow the panel to cut runtime. Benchmarks always run."
+            >
+              <option value="all">all (full panel)</option>
+              <option value="statistical">statistical (ets/arima/theta/ces)</option>
+              <option value="ml">ml (gbm)</option>
+              <option value="intermittent">intermittent (croston/tsb/sba)</option>
+              <option value="fast">fast (ets/theta)</option>
             </select>
           </div>
         </div>
