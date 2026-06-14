@@ -115,14 +115,14 @@ async def single_forecast(body: SingleForecastRequest) -> dict[str, Any]:
             "bundle": bundle.model_dump(mode="json"),
         }
         if body.band:
+            from demand_signal_os.leaderboard import forecast_path
+
             steps = min(body.horizon, _MAX_BAND)
-            band = []
-            for h in range(1, steps + 1):
-                q = (_fit(h).quantiles) if h != body.horizon else bundle.quantiles
-                band.append(
-                    {"h": h, "q05": q.q05, "q50": q.q50, "q95": q.q95}
-                )
-            out["band"] = band
+            path = forecast_path(actuals, _build_config(body, horizon=steps), body.method_id)
+            out["band"] = [
+                {"h": i + 1, "q05": q.q05, "q50": q.q50, "q95": q.q95}
+                for i, q in enumerate(path)
+            ]
             out["band_truncated"] = body.horizon > _MAX_BAND
     except HTTPException:
         raise

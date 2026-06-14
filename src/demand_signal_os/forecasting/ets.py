@@ -123,5 +123,32 @@ class ETSMethod:
             provenance=provenance,
         )
 
+    def fit_predict_path(self, request: ForecastRequest) -> list[Quantiles]:
+        """Per-step quantiles over the whole horizon (real widening band).
+
+        Same state-space innovation variance as ``fit_predict`` but keeps every
+        step instead of collapsing to step 0, so the interval grows with horizon
+        as AutoETS natively predicts. Additive: ``fit_predict`` is unchanged.
+        """
+        import numpy as np
+        from statsforecast.models import AutoETS
+
+        history = np.asarray(request.history, dtype=float)
+        h = len(request.horizon_buckets)
+        if h == 0:
+            raise ValueError("horizon_buckets is empty")
+        model = AutoETS(model=self.model, season_length=self.season_length).fit(history)
+        result = model.predict(h=h, level=[80, 90])
+        means = np.asarray(result["mean"], dtype=float)
+        lo80 = np.asarray(result["lo-80"], dtype=float)
+        hi80 = np.asarray(result["hi-80"], dtype=float)
+        rng = np.random.default_rng(request.seed)
+        path: list[Quantiles] = []
+        for i in range(h):
+            sigma = max(float((hi80[i] - lo80[i]) / (2 * 1.2816)), 1e-9)
+            samples = rng.normal(loc=float(means[i]), scale=sigma, size=10_000)
+            path.append(Quantiles(**quantiles_from_samples(samples)))
+        return path
+
 
 _method: ForecastMethod = ETSMethod()  # protocol-conformance check at import

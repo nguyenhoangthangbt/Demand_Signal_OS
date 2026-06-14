@@ -61,8 +61,17 @@ def test_deterministic_same_request_same_band(client: TestClient) -> None:
     assert forecast(a) == forecast(b)
 
 
+# A realistic noisy series: ETS infers real innovation variance, so the
+# interval genuinely grows with horizon (a near-noiseless series would not).
+_NOISY = [
+    61, 71, 80, 67, 49, 48, 59, 68, 66, 65, 62, 54, 27, 47, 50, 66, 70, 64, 57,
+    54, 47, 71, 66, 77, 74, 54, 39, 41, 56, 73, 67, 65, 52, 50, 50, 63, 66, 74,
+    73, 65, 35, 60, 71, 78, 77, 64, 65, 61,
+]
+
+
 def test_band_mode_returns_per_step_widening_band(client: TestClient) -> None:
-    req = {**_REQUEST, "band": True, "horizon": 8}
+    req = {**_REQUEST, "history": _NOISY, "band": True, "horizon": 8}
     resp = client.post("/api/v1/forecast/single", json=req)
     assert resp.status_code == 200, resp.text
     band = resp.json()["band"]
@@ -71,7 +80,9 @@ def test_band_mode_returns_per_step_widening_band(client: TestClient) -> None:
     for step in band:
         assert step["q05"] <= step["q50"] <= step["q95"]
     spread = [s["q95"] - s["q05"] for s in band]
-    assert spread[-1] >= spread[0]  # uncertainty propagates, not hidden
+    # real widening: the interval grows with horizon (the whole point of B).
+    assert spread[-1] > spread[0] * 1.1, spread
+    assert all(b >= a - 1e-6 for a, b in zip(spread, spread[1:])), spread  # non-decreasing
 
 
 def test_open_no_tier_key_required(client: TestClient) -> None:
