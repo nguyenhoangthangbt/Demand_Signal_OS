@@ -9,7 +9,10 @@ import pytest
 from demand_signal_os.forecasting.registry import (
     BENCHMARK_IDS,
     CONTINUOUS_FORECASTER_IDS,
+    FAST_IDS,
     INTERMITTENT_IDS,
+    ML_IDS,
+    STATISTICAL_IDS,
     build_method,
     is_intermittent,
     select_method_ids,
@@ -73,3 +76,55 @@ def test_benchmarks_always_present() -> None:
     for mode in ("auto", "on", "off"):
         ids = select_method_ids([10.0] * 100, _cfg(intermittent_mode=mode))
         assert set(BENCHMARK_IDS).issubset(set(ids))
+
+
+# --- forecaster_set selector -------------------------------------------------
+
+_DENSE = [10.0 + (i % 5) for i in range(100)]
+
+
+def test_set_statistical_only() -> None:
+    ids = select_method_ids(_DENSE, _cfg(forecaster_set="statistical"))
+    assert set(ids) == set(STATISTICAL_IDS) | set(BENCHMARK_IDS)
+    assert "gbm" not in ids and not set(INTERMITTENT_IDS) & set(ids)
+
+
+def test_set_ml_only() -> None:
+    ids = select_method_ids(_DENSE, _cfg(forecaster_set="ml"))
+    assert set(ids) == set(ML_IDS) | set(BENCHMARK_IDS)
+
+
+def test_set_fast_only() -> None:
+    ids = select_method_ids(_DENSE, _cfg(forecaster_set="fast"))
+    assert set(ids) == set(FAST_IDS) | set(BENCHMARK_IDS)
+
+
+def test_set_intermittent_class_forces_intermittent() -> None:
+    # Dense series, but the class selection forces the intermittent trio.
+    ids = select_method_ids(_DENSE, _cfg(forecaster_set="intermittent"))
+    assert set(ids) == set(INTERMITTENT_IDS) | set(BENCHMARK_IDS)
+
+
+def test_set_full_equals_all() -> None:
+    sparse = [0.0] * 40 + [5.0] * 60
+    a = select_method_ids(sparse, _cfg(forecaster_set="all"))
+    b = select_method_ids(sparse, _cfg(forecaster_set="full"))
+    assert a == b
+    # full panel on a sparse series = all continuous + intermittent + benchmarks
+    assert set(a) == set(CONTINUOUS_FORECASTER_IDS) | set(INTERMITTENT_IDS) | set(BENCHMARK_IDS)
+
+
+def test_explicit_methods_override_set() -> None:
+    ids = select_method_ids(_DENSE, _cfg(forecaster_set="ml", methods=["ets", "theta"]))
+    assert set(ids) == {"ets", "theta"} | set(BENCHMARK_IDS)
+
+
+def test_explicit_methods_unknown_raises() -> None:
+    with pytest.raises(ValueError):
+        select_method_ids(_DENSE, _cfg(methods=["ets", "prophet"]))
+
+
+def test_every_set_keeps_benchmarks() -> None:
+    for fs in ("all", "full", "statistical", "ml", "intermittent", "fast"):
+        ids = select_method_ids(_DENSE, _cfg(forecaster_set=fs))
+        assert set(BENCHMARK_IDS).issubset(set(ids)), fs

@@ -55,6 +55,14 @@ INTERMITTENT_IDS: tuple[str, ...] = ("croston_opt", "tsb", "sba")
 # the M-competition statistical trio (arima/theta/ces) alongside ets + gbm.
 CONTINUOUS_FORECASTER_IDS: tuple[str, ...] = ("ets", "gbm", "arima", "theta", "ces")
 
+# Forecaster classes (for the forecaster_set selector). Benchmarks are NOT a
+# selectable class — they always run as the gate.
+STATISTICAL_IDS: tuple[str, ...] = ("ets", "arima", "theta", "ces")
+ML_IDS: tuple[str, ...] = ("gbm",)
+FAST_IDS: tuple[str, ...] = ("ets", "theta")  # cheapest fits — quick scan
+# Canonical order for deterministic explicit-methods selection.
+_ALL_FORECASTER_IDS: tuple[str, ...] = (*CONTINUOUS_FORECASTER_IDS, *INTERMITTENT_IDS)
+
 # Builders: method_id -> (config -> ForecastMethod). Each threads the four
 # user knobs; engine-internal hyperparameters stay at audited defaults.
 _BUILDERS: dict[str, Callable[[LeaderboardConfig], ForecastMethod]] = {
@@ -104,19 +112,45 @@ def is_intermittent(history: list[float]) -> bool:
 
 
 def select_method_ids(history: list[float], config: LeaderboardConfig) -> list[str]:
-    """Pick which methods compete, given the series and the intermittent knob.
+    """Pick which methods compete, given the series and the panel-focus knobs.
 
-    Benchmarks always run (the gate). Continuous forecasters always run.
-    Intermittent forecasters run when mode is 'on', or 'auto' + detected.
-    Order is deterministic for reproducible content hashing.
+    Selection precedence:
+      1. ``config.methods`` (explicit allowlist) — exactly those forecasters.
+      2. ``config.forecaster_set`` class — that class only ("all"/"full" run
+         the full panel + intermittent per ``intermittent_mode``).
+    Benchmarks ALWAYS run (the beats-naive gate); they are never selectable
+    away. Order is deterministic for reproducible content hashing.
     """
-    ids: list[str] = list(CONTINUOUS_FORECASTER_IDS)
+    methods = getattr(config, "methods", None)
+    if methods:
+        unknown = [m for m in methods if m not in _ALL_FORECASTER_IDS]
+        if unknown:
+            raise ValueError(
+                f"unknown forecaster(s) {unknown}; choose from {_ALL_FORECASTER_IDS}"
+            )
+        chosen = set(methods)
+        ids = [m for m in _ALL_FORECASTER_IDS if m in chosen]  # canonical order
+        ids.extend(BENCHMARK_IDS)
+        return ids
 
-    include_intermittent = config.intermittent_mode == "on" or (
-        config.intermittent_mode == "auto" and is_intermittent(history)
-    )
-    if include_intermittent:
-        ids.extend(INTERMITTENT_IDS)
+    fset = getattr(config, "forecaster_set", "all")
+    if fset in ("all", "full"):
+        ids = list(CONTINUOUS_FORECASTER_IDS)
+        include_intermittent = config.intermittent_mode == "on" or (
+            config.intermittent_mode == "auto" and is_intermittent(history)
+        )
+        if include_intermittent:
+            ids.extend(INTERMITTENT_IDS)
+    elif fset == "statistical":
+        ids = list(STATISTICAL_IDS)
+    elif fset == "ml":
+        ids = list(ML_IDS)
+    elif fset == "intermittent":
+        ids = list(INTERMITTENT_IDS)
+    elif fset == "fast":
+        ids = list(FAST_IDS)
+    else:  # defensive — Literal should prevent this
+        raise ValueError(f"unknown forecaster_set {fset!r}")
 
     ids.extend(BENCHMARK_IDS)
     return ids
