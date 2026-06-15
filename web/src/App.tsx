@@ -74,6 +74,9 @@ interface TemplateMeta {
 export default function App() {
   const [token, setToken] = useState<string>(() => localStorage.getItem(TOKEN_KEY) ?? "");
   const [draftToken, setDraftToken] = useState<string>(token);
+  // Series lifted from a validated demand_history upload -> the live forecast
+  // below forecasts YOUR data, not the sample series.
+  const [forecastSeries, setForecastSeries] = useState<number[] | null>(null);
   const hash = useHashView();
   const isVerify = hash === "#verify";
   const isLeaderboard = hash === "#leaderboard";
@@ -114,9 +117,9 @@ export default function App() {
               onSubmit={() => setToken(draftToken.trim())}
             />
           ) : (
-            <WorkbenchSection token={token} />
+            <WorkbenchSection token={token} onForecastSeries={setForecastSeries} />
           )}
-          <ForecastPreview />
+          <ForecastPreview series={forecastSeries} />
           <CensoringSection />
           <ConsumersSection />
         </>
@@ -312,7 +315,13 @@ function TokenGate({
   );
 }
 
-function WorkbenchSection({ token }: { token: string }) {
+function WorkbenchSection({
+  token,
+  onForecastSeries,
+}: {
+  token: string;
+  onForecastSeries?: (series: number[]) => void;
+}) {
   const [templates, setTemplates] = useState<TemplateMeta[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -321,6 +330,7 @@ function WorkbenchSection({ token }: { token: string }) {
     ok: boolean;
     errors: { message?: string }[];
     warnings: { message?: string }[];
+    values?: Record<string, unknown> | null;
   } | null>(null);
   const [runOutput, setRunOutput] = useState<{
     ok: boolean;
@@ -390,6 +400,12 @@ function WorkbenchSection({ token }: { token: string }) {
       );
       const d = await r.json();
       setValidateResult(d);
+      // On a clean validate, lift the observed-demand series so the live
+      // forecast below forecasts the user's OWN uploaded data.
+      if (d.ok && d.values && onForecastSeries) {
+        const series = extractDemandSeries(d.values);
+        if (series.length >= 4) onForecastSeries(series);
+      }
     } catch (e) {
       setValidateResult({
         ok: false,
@@ -626,21 +642,58 @@ function WorkbenchSection({ token }: { token: string }) {
 
 type Band = { h: number; q05: number; q50: number; q95: number };
 
-function ForecastPreview() {
-  // A representative demand series; the real forecast band below is computed
-  // live from it by the DSO engine (single-method ETS fit), not hardcoded.
-  const HISTORY = [42, 48, 55, 51, 58, 67, 73, 71, 65, 60, 68, 72];
+// Parse a comma/newline/space-separated list of numbers from the editable
+// forecast textarea.
+function parseSeries(text: string): number[] {
+  return text
+    .split(/[\s,]+/)
+    .map((t) => Number(t))
+    .filter((n) => Number.isFinite(n));
+}
+
+// Pull the observed-demand series out of a validated demand_history workbook's
+// parsed values (a sheet-name -> rows map). Scans array sheets for a numeric
+// demand column so it tolerates the exact field/sheet naming.
+function extractDemandSeries(values: Record<string, unknown>): number[] {
+  const keys = ["observed_demand", "demand", "units", "sales", "quantity", "value"];
+  for (const v of Object.values(values)) {
+    if (Array.isArray(v) && v.length) {
+      const rows = v as Record<string, unknown>[];
+      const key = keys.find((k) =>
+        rows.some((r) => r && typeof r === "object" && typeof r[k] === "number"),
+      );
+      if (key) {
+        return rows
+          .map((r) => (r && typeof r === "object" ? r[key] : null))
+          .filter((x): x is number => typeof x === "number");
+      }
+    }
+  }
+  return [];
+}
+
+function ForecastPreview({ series }: { series?: number[] | null }) {
+  // A representative demand series the forecast starts from; the band is always
+  // computed LIVE by the DSO engine (single-method ETS). Editable, and a
+  // validated demand_history upload feeds YOUR series in (see `series` prop).
+  const SAMPLE = [42, 48, 55, 51, 58, 67, 73, 71, 65, 60, 68, 72];
+  const [HISTORY, setHistory] = useState<number[]>(SAMPLE);
+  const [text, setText] = useState<string>(SAMPLE.join(", "));
   const [FORECAST, setForecast] = useState<Band[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [hover, setHover] = useState<number | null>(null);
+  const [usingUpload, setUsingUpload] = useState(false);
+  const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    let active = true;
+  const runForecast = (hist: number[]) => {
+    setErr(null);
+    setBusy(true);
+    setHistory(hist);
     fetch(`${DSO_API}/forecast/single`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        history: HISTORY,
+        history: hist,
         horizon: 8,
         season_length: 7,
         method_id: "ets",
@@ -648,25 +701,34 @@ function ForecastPreview() {
       }),
     })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
-      .then((d) => {
-        if (active)
-          setForecast(
-            (d.band ?? []).map((b: Band) => ({
-              h: b.h,
-              q05: Math.round(b.q05 * 10) / 10,
-              q50: Math.round(b.q50 * 10) / 10,
-              q95: Math.round(b.q95 * 10) / 10,
-            })),
-          );
-      })
-      .catch((e) => {
-        if (active) setErr(String(e?.message ?? e));
-      });
-    return () => {
-      active = false;
-    };
+      .then((d) =>
+        setForecast(
+          (d.band ?? []).map((b: Band) => ({
+            h: b.h,
+            q05: Math.round(b.q05 * 10) / 10,
+            q50: Math.round(b.q50 * 10) / 10,
+            q95: Math.round(b.q95 * 10) / 10,
+          })),
+        ),
+      )
+      .catch((e) => setErr(String(e?.message ?? e)))
+      .finally(() => setBusy(false));
+  };
+
+  // Initial: forecast the sample series once on mount.
+  useEffect(() => {
+    runForecast(SAMPLE);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  // When a validated upload lifts a series, switch to it and forecast it live.
+  useEffect(() => {
+    if (series && series.length >= 4) {
+      setText(series.join(", "));
+      setUsingUpload(true);
+      runForecast(series);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [series]);
 
   const total = HISTORY.length + FORECAST.length;
   const maxY = Math.ceil(Math.max(160, ...HISTORY, ...FORECAST.map((f) => f.q95)) * 1.05);
@@ -709,12 +771,65 @@ function ForecastPreview() {
         Probabilistic forecast{" "}
         <span style={{ fontSize: "0.7rem", color: PALETTE.ok, fontWeight: 400 }}>· live</span>
       </h3>
-      <p style={{ margin: 0, marginBottom: 16, fontSize: "0.85rem", color: PALETTE.textDim }}>
+      <p style={{ margin: 0, marginBottom: 12, fontSize: "0.85rem", color: PALETTE.textDim }}>
         Solid line: q50 (median). Light band: q05 to q95 (the 90% prediction
-        interval). Computed live by the engine from the series below via a
-        single-method ETS fit, not a hardcoded sample. The band widens with
-        horizon, so uncertainty propagates rather than hiding.
+        interval), computed live by the engine via a single-method ETS fit. The
+        band widens with horizon, so uncertainty propagates rather than hiding.{" "}
+        {usingUpload ? (
+          <span style={{ color: PALETTE.ok }}>
+            Forecasting your uploaded demand_history.
+          </span>
+        ) : (
+          <span>Edit the series below or upload a demand_history to forecast your own.</span>
+        )}
       </p>
+      <div style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 14, flexWrap: "wrap" }}>
+        <textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          rows={2}
+          spellCheck={false}
+          aria-label="Demand history (comma or newline separated)"
+          style={{
+            flex: 1,
+            minWidth: 280,
+            fontFamily: "ui-monospace, monospace",
+            fontSize: "0.78rem",
+            color: PALETTE.text,
+            backgroundColor: PALETTE.bgPanel,
+            border: `1px solid ${PALETTE.border}`,
+            borderRadius: 6,
+            padding: "8px 10px",
+            resize: "vertical",
+          }}
+        />
+        <button
+          onClick={() => {
+            const hist = parseSeries(text);
+            if (hist.length >= 4) {
+              setUsingUpload(false);
+              runForecast(hist);
+            } else {
+              setErr("Enter at least 4 numbers.");
+            }
+          }}
+          disabled={busy}
+          style={{
+            padding: "8px 14px",
+            fontSize: "0.8rem",
+            fontWeight: 600,
+            color: PALETTE.accentText,
+            backgroundColor: PALETTE.accent,
+            border: "none",
+            borderRadius: 6,
+            cursor: busy ? "wait" : "pointer",
+            opacity: busy ? 0.6 : 1,
+            whiteSpace: "nowrap",
+          }}
+        >
+          {busy ? "Forecasting…" : "▶ Forecast this series"}
+        </button>
+      </div>
       {err && (
         <p style={{ margin: "0 0 12px 0", fontSize: "0.8rem", color: PALETTE.warn }}>
           Live forecast unavailable ({err}); showing history only.
