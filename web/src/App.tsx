@@ -56,7 +56,7 @@ const PALETTE = {
 
 const CENSORING_FLAGS = [
   { flag: "OBSERVED", color: PALETTE.ok, blurb: "Plain unconstrained observation. Shelf stocked, customer arrived, unit moved." },
-  { flag: "REAL_ZERO", color: PALETTE.textDim, blurb: "True zero demand. Not a missing read, not a stockout — distinct so the forecaster doesn't treat it as missing." },
+  { flag: "REAL_ZERO", color: PALETTE.textDim, blurb: "True zero demand. Not a missing read, not a stockout, and distinct so the forecaster does not treat it as missing." },
   { flag: "STOCKOUT_CENSORED", color: PALETTE.warn, blurb: "Demand exceeded supply; recorded sales are a LOWER bound. Naive averaging here underestimates demand and starves replenishment." },
   { flag: "PARTIAL_CENSORED", color: PALETTE.warn, blurb: "Part of the period was supply-constrained. Mixed-mode; treated as a lower bound on the censored fraction." },
   { flag: "UNKNOWN", color: PALETTE.textFaint, blurb: "Missing meta. Surfaced verbatim so the planner can repair before the run, not silently coerced to OBSERVED." },
@@ -211,7 +211,7 @@ function Hero() {
           fontWeight: 600,
         }}
       >
-        v0.1 PREVIEW — DSO is library-first; runtime is via plan2cash-api
+        v0.1 PREVIEW · DSO is library-first; runtime is via plan2cash-api
       </span>
       <h2 style={{ marginTop: 12, fontSize: "2rem", lineHeight: 1.2 }}>
         Forecasts that admit what they don't know.
@@ -227,7 +227,7 @@ function Hero() {
         Quantile-band probabilistic forecasts with an explicit censoring
         taxonomy: every observation tagged OBSERVED, REAL_ZERO,
         STOCKOUT_CENSORED, PARTIAL_CENSORED, UNKNOWN. Censoring is never
-        silently coerced to zero — that's the moat over naive averaging.
+        silently coerced to zero. That is the moat over naive averaging.
       </p>
     </section>
   );
@@ -273,7 +273,7 @@ function TokenGate({
           <a href="mailto:admin@sim-os.ai" style={{ color: PALETTE.link }}>
             admin@sim-os.ai
           </a>{" "}
-          for a Suite seat.
+          for access. DSO is included in SimOS Premium and Enterprise.
         </p>
         <input
           type="password"
@@ -339,6 +339,12 @@ function WorkbenchSection({
 
   useEffect(() => {
     setLoadError(null); // clear any prior error so a corrected key can retry
+    // No key yet (public visitor): show the key prompt, do not attempt a
+    // load that would 401 and surface a red error on first paint.
+    if (!token) {
+      setTemplates(null);
+      return;
+    }
     fetch(`${API_BASE}/api/v1/templates`, {
       headers: { Authorization: `Bearer ${token}` },
     })
@@ -346,7 +352,7 @@ function WorkbenchSection({
         if (!r.ok) {
           if (r.status === 401 || r.status === 403) {
             throw new Error(
-              "That tier key was not accepted. Check that it is a valid, active mao_live_* key, or email admin@sim-os.ai for a Suite seat.",
+              "That tier key was not accepted. Check that it is a valid, active mao_live_* key, or contact admin@sim-os.ai for access.",
             );
           }
           throw new Error(`${r.status} ${r.statusText}`);
@@ -1076,11 +1082,19 @@ function Footer() {
         fontSize: "0.75rem",
       }}
     >
-      DemandSignalOS · part of the{" "}
+      DemandSignalOS · included in SimOS{" "}
+      <a href="https://sim-os.ai/pricing" style={{ color: PALETTE.link, textDecoration: "none" }}>
+        Premium
+      </a>{" "}
+      and{" "}
+      <a href="https://sim-os.ai/enterprise/" style={{ color: PALETTE.link, textDecoration: "none" }}>
+        Enterprise
+      </a>{" "}
+      · part of the{" "}
       <a href="https://plan2cash.sim-os.ai" style={{ color: PALETTE.link, textDecoration: "none" }}>
         Plan2Cash
       </a>{" "}
-      trio · v0.1 preview · admin@sim-os.ai
+      composition · v0.1 preview · admin@sim-os.ai
     </footer>
   );
 }
