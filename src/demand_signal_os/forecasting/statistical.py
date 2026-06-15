@@ -98,6 +98,32 @@ def _bundle_from_level_model(
     )
 
 
+def _path_from_level_model(model: _LevelModel, request: ForecastRequest) -> list[Quantiles]:
+    """Per-step quantiles over the WHOLE horizon (real widening band).
+
+    Identical sampling to ``_bundle_from_level_model`` but keeps every step
+    instead of collapsing to step 0, so the interval grows with horizon as the
+    statsforecast model natively predicts. Additive: does not change
+    ``fit_predict`` or the leaderboard's single-bundle path.
+    """
+    history = np.asarray(request.history, dtype=float)
+    h = len(request.horizon_buckets)
+    if h == 0:
+        raise ValueError("horizon_buckets is empty")
+    fitted = model.fit(history)
+    result = fitted.predict(h=h, level=[80, 90])
+    means = np.asarray(result["mean"], dtype=float)
+    lo80 = np.asarray(result["lo-80"], dtype=float)
+    hi80 = np.asarray(result["hi-80"], dtype=float)
+    rng = np.random.default_rng(request.seed)
+    path: list[Quantiles] = []
+    for i in range(h):
+        sigma = max(float((hi80[i] - lo80[i]) / (2 * _Z90)), 1e-9)
+        samples = rng.normal(loc=float(means[i]), scale=sigma, size=10_000)
+        path.append(Quantiles(**quantiles_from_samples(samples)))
+    return path
+
+
 class AutoARIMAMethod:
     """Hyndman-Khandakar auto.arima (statsforecast.AutoARIMA)."""
 
@@ -114,6 +140,11 @@ class AutoARIMAMethod:
             AutoARIMA(season_length=self.season_length), request, self.method_id,
             f"arima-s{self.season_length}", min_quantile_spread=self.min_quantile_spread,
         )
+
+    def fit_predict_path(self, request: ForecastRequest) -> list[Quantiles]:
+        from statsforecast.models import AutoARIMA
+
+        return _path_from_level_model(AutoARIMA(season_length=self.season_length), request)
 
 
 class AutoThetaMethod:
@@ -133,6 +164,11 @@ class AutoThetaMethod:
             f"theta-s{self.season_length}", min_quantile_spread=self.min_quantile_spread,
         )
 
+    def fit_predict_path(self, request: ForecastRequest) -> list[Quantiles]:
+        from statsforecast.models import AutoTheta
+
+        return _path_from_level_model(AutoTheta(season_length=self.season_length), request)
+
 
 class AutoCESMethod:
     """Complex Exponential Smoothing (statsforecast.AutoCES)."""
@@ -150,6 +186,11 @@ class AutoCESMethod:
             AutoCES(season_length=self.season_length), request, self.method_id,
             f"ces-s{self.season_length}", min_quantile_spread=self.min_quantile_spread,
         )
+
+    def fit_predict_path(self, request: ForecastRequest) -> list[Quantiles]:
+        from statsforecast.models import AutoCES
+
+        return _path_from_level_model(AutoCES(season_length=self.season_length), request)
 
 
 # Protocol-conformance checks at import time.

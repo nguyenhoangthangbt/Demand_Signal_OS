@@ -15,6 +15,9 @@ import LeaderboardView from "./LeaderboardView";
 import VerifyView from "./VerifyView";
 
 const API_BASE = "https://plan2cash-api.sim-os.ai";
+// DSO's own API (leaderboard + the v0.2 single-series forecast). Same base the
+// LeaderboardView uses; absolute in prod via VITE_DSO_API_BASE, "/api/v1" in dev.
+const DSO_API: string = (import.meta.env.VITE_DSO_API_BASE as string | undefined) ?? "/api/v1";
 const TOKEN_KEY = "dso_token_v1";
 
 // Tiny hash-based view router (App.tsx has no React Router). The Verify trust
@@ -71,6 +74,9 @@ interface TemplateMeta {
 export default function App() {
   const [token, setToken] = useState<string>(() => localStorage.getItem(TOKEN_KEY) ?? "");
   const [draftToken, setDraftToken] = useState<string>(token);
+  // Series lifted from a validated demand_history upload -> the live forecast
+  // below forecasts YOUR data, not the sample series.
+  const [forecastSeries, setForecastSeries] = useState<number[] | null>(null);
   const hash = useHashView();
   const isVerify = hash === "#verify";
   const isLeaderboard = hash === "#leaderboard";
@@ -111,9 +117,9 @@ export default function App() {
               onSubmit={() => setToken(draftToken.trim())}
             />
           ) : (
-            <WorkbenchSection token={token} />
+            <WorkbenchSection token={token} onForecastSeries={setForecastSeries} />
           )}
-          <ForecastPreview />
+          <ForecastPreview series={forecastSeries} />
           <CensoringSection />
           <ConsumersSection />
         </>
@@ -141,7 +147,7 @@ function Header({ token, onSignOut }: { token: string; onSignOut: () => void }) 
           <span style={{ fontSize: "0.7rem", color: PALETTE.textFaint }}>v0.1 preview</span>
         </h1>
         <p style={{ margin: 0, fontSize: "0.75rem", color: PALETTE.textFaint }}>
-          Censoring-honest probabilistic forecasting + drift signal
+          Censoring-honest probabilistic forecasting + forecaster leaderboard
         </p>
       </div>
       <nav style={{ display: "flex", gap: 12, alignItems: "center" }}>
@@ -309,7 +315,13 @@ function TokenGate({
   );
 }
 
-function WorkbenchSection({ token }: { token: string }) {
+function WorkbenchSection({
+  token,
+  onForecastSeries,
+}: {
+  token: string;
+  onForecastSeries?: (series: number[]) => void;
+}) {
   const [templates, setTemplates] = useState<TemplateMeta[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -318,6 +330,7 @@ function WorkbenchSection({ token }: { token: string }) {
     ok: boolean;
     errors: { message?: string }[];
     warnings: { message?: string }[];
+    values?: Record<string, unknown> | null;
   } | null>(null);
   const [runOutput, setRunOutput] = useState<{
     ok: boolean;
@@ -387,6 +400,12 @@ function WorkbenchSection({ token }: { token: string }) {
       );
       const d = await r.json();
       setValidateResult(d);
+      // On a clean validate, lift the observed-demand series so the live
+      // forecast below forecasts the user's OWN uploaded data.
+      if (d.ok && d.values && onForecastSeries) {
+        const series = extractDemandSeries(d.values);
+        if (series.length >= 4) onForecastSeries(series);
+      }
     } catch (e) {
       setValidateResult({
         ok: false,
@@ -399,15 +418,15 @@ function WorkbenchSection({ token }: { token: string }) {
   }
 
   function handleRun() {
-    // v0.1: no DSO HTTP API; the "run" is the in-page synthetic
-    // ForecastPreview below. Surface this honestly.
+    // The probabilistic forecast below is computed LIVE by the engine
+    // (ForecastPreview -> POST /forecast/single) from a sample series.
+    // Batch-forecasting the UPLOADED workbook over the DSO API is v0.1.5.
     setRunOutput({
       ok: true,
       note:
-        "v0.1 run: the validated workbook would be passed to DSO's Python " +
-        "library for the actual forecasting pass. The sample band + drift " +
-        "gauge below illustrates the shape of the output. v0.1.5 wires a " +
-        "real DSO HTTP API and replaces this stub with the live result.",
+        "Validated. The probabilistic forecast below is computed live by the " +
+        "engine from the series shown (POST /forecast/single). Batch-forecasting " +
+        "your uploaded history over the DSO HTTP API lands in v0.1.5.",
     });
   }
 
@@ -621,22 +640,98 @@ function WorkbenchSection({ token }: { token: string }) {
   );
 }
 
-function ForecastPreview() {
-  const HISTORY = [42, 48, 55, 51, 58, 67, 73, 71, 65, 60, 68, 72];
-  const FORECAST = [
-    { h: 1, q05: 60, q50: 73, q95: 86 },
-    { h: 2, q05: 56, q50: 75, q95: 94 },
-    { h: 3, q05: 52, q50: 78, q95: 104 },
-    { h: 4, q05: 48, q50: 80, q95: 112 },
-    { h: 5, q05: 45, q50: 83, q95: 121 },
-    { h: 6, q05: 42, q50: 85, q95: 128 },
-    { h: 7, q05: 38, q50: 88, q95: 138 },
-    { h: 8, q05: 34, q50: 90, q95: 146 },
-  ];
+type Band = { h: number; q05: number; q50: number; q95: number };
+
+// Parse a comma/newline/space-separated list of numbers from the editable
+// forecast textarea.
+function parseSeries(text: string): number[] {
+  return text
+    .split(/[\s,]+/)
+    .map((t) => Number(t))
+    .filter((n) => Number.isFinite(n));
+}
+
+// Pull the observed-demand series out of a validated demand_history workbook's
+// parsed values (a sheet-name -> rows map). Scans array sheets for a numeric
+// demand column so it tolerates the exact field/sheet naming.
+function extractDemandSeries(values: Record<string, unknown>): number[] {
+  const keys = ["observed_demand", "demand", "units", "sales", "quantity", "value"];
+  for (const v of Object.values(values)) {
+    if (Array.isArray(v) && v.length) {
+      const rows = v as Record<string, unknown>[];
+      const key = keys.find((k) =>
+        rows.some((r) => r && typeof r === "object" && typeof r[k] === "number"),
+      );
+      if (key) {
+        return rows
+          .map((r) => (r && typeof r === "object" ? r[key] : null))
+          .filter((x): x is number => typeof x === "number");
+      }
+    }
+  }
+  return [];
+}
+
+function ForecastPreview({ series }: { series?: number[] | null }) {
+  // A representative demand series the forecast starts from; the band is always
+  // computed LIVE by the DSO engine (single-method ETS). Editable, and a
+  // validated demand_history upload feeds YOUR series in (see `series` prop).
+  const SAMPLE = [42, 48, 55, 51, 58, 67, 73, 71, 65, 60, 68, 72];
+  const [HISTORY, setHistory] = useState<number[]>(SAMPLE);
+  const [text, setText] = useState<string>(SAMPLE.join(", "));
+  const [FORECAST, setForecast] = useState<Band[]>([]);
+  const [err, setErr] = useState<string | null>(null);
   const [hover, setHover] = useState<number | null>(null);
+  const [usingUpload, setUsingUpload] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const runForecast = (hist: number[]) => {
+    setErr(null);
+    setBusy(true);
+    setHistory(hist);
+    fetch(`${DSO_API}/forecast/single`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        history: hist,
+        horizon: 8,
+        season_length: 7,
+        method_id: "ets",
+        band: true,
+      }),
+    })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((d) =>
+        setForecast(
+          (d.band ?? []).map((b: Band) => ({
+            h: b.h,
+            q05: Math.round(b.q05 * 10) / 10,
+            q50: Math.round(b.q50 * 10) / 10,
+            q95: Math.round(b.q95 * 10) / 10,
+          })),
+        ),
+      )
+      .catch((e) => setErr(String(e?.message ?? e)))
+      .finally(() => setBusy(false));
+  };
+
+  // Initial: forecast the sample series once on mount.
+  useEffect(() => {
+    runForecast(SAMPLE);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // When a validated upload lifts a series, switch to it and forecast it live.
+  useEffect(() => {
+    if (series && series.length >= 4) {
+      setText(series.join(", "));
+      setUsingUpload(true);
+      runForecast(series);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [series]);
 
   const total = HISTORY.length + FORECAST.length;
-  const maxY = 160;
+  const maxY = Math.ceil(Math.max(160, ...HISTORY, ...FORECAST.map((f) => f.q95)) * 1.05);
   const padding = { top: 20, right: 16, bottom: 26, left: 32 };
   const w = 720;
   const h = 280;
@@ -673,12 +768,73 @@ function ForecastPreview() {
   return (
     <section style={{ padding: "0 1.5rem 1.25rem", maxWidth: 900, margin: "0 auto" }}>
       <h3 style={{ fontSize: "1.1rem", marginBottom: 6 }}>
-        Sample probabilistic forecast (synthetic v0.1)
+        Probabilistic forecast{" "}
+        <span style={{ fontSize: "0.7rem", color: PALETTE.ok, fontWeight: 400 }}>· live</span>
       </h3>
-      <p style={{ margin: 0, marginBottom: 16, fontSize: "0.85rem", color: PALETTE.textDim }}>
-        Solid line: q50 (median). Light band: q05–q95 (90% prediction interval).
-        The band widens with horizon as it should — uncertainty propagated, not hidden.
+      <p style={{ margin: 0, marginBottom: 12, fontSize: "0.85rem", color: PALETTE.textDim }}>
+        Solid line: q50 (median). Light band: q05 to q95 (the 90% prediction
+        interval), computed live by the engine via a single-method ETS fit. The
+        band widens with horizon, so uncertainty propagates rather than hiding.{" "}
+        {usingUpload ? (
+          <span style={{ color: PALETTE.ok }}>
+            Forecasting your uploaded demand_history.
+          </span>
+        ) : (
+          <span>Edit the series below or upload a demand_history to forecast your own.</span>
+        )}
       </p>
+      <div style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 14, flexWrap: "wrap" }}>
+        <textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          rows={2}
+          spellCheck={false}
+          aria-label="Demand history (comma or newline separated)"
+          style={{
+            flex: 1,
+            minWidth: 280,
+            fontFamily: "ui-monospace, monospace",
+            fontSize: "0.78rem",
+            color: PALETTE.text,
+            backgroundColor: PALETTE.bgPanel,
+            border: `1px solid ${PALETTE.border}`,
+            borderRadius: 6,
+            padding: "8px 10px",
+            resize: "vertical",
+          }}
+        />
+        <button
+          onClick={() => {
+            const hist = parseSeries(text);
+            if (hist.length >= 4) {
+              setUsingUpload(false);
+              runForecast(hist);
+            } else {
+              setErr("Enter at least 4 numbers.");
+            }
+          }}
+          disabled={busy}
+          style={{
+            padding: "8px 14px",
+            fontSize: "0.8rem",
+            fontWeight: 600,
+            color: PALETTE.accentText,
+            backgroundColor: PALETTE.accent,
+            border: "none",
+            borderRadius: 6,
+            cursor: busy ? "wait" : "pointer",
+            opacity: busy ? 0.6 : 1,
+            whiteSpace: "nowrap",
+          }}
+        >
+          {busy ? "Forecasting…" : "▶ Forecast this series"}
+        </button>
+      </div>
+      {err && (
+        <p style={{ margin: "0 0 12px 0", fontSize: "0.8rem", color: PALETTE.warn }}>
+          Live forecast unavailable ({err}); showing history only.
+        </p>
+      )}
       <div
         style={{
           backgroundColor: PALETTE.bgPanel,
@@ -784,73 +940,10 @@ function ForecastPreview() {
           )}
         </svg>
       </div>
-      <DriftGauge drift={1.42} threshold={1.5} />
+      {/* Drift is a monitoring signal (current vs training accuracy over time),
+          not a single-forecast output — wired to a real value in a follow-up,
+          not shown here as a hardcoded number. */}
     </section>
-  );
-}
-
-function DriftGauge({ drift, threshold }: { drift: number; threshold: number }) {
-  const pct = Math.min(100, (drift / (threshold * 1.5)) * 100);
-  const state =
-    drift >= threshold ? "halted" : drift >= threshold * 0.8 ? "watch" : "ok";
-  const color =
-    state === "halted" ? PALETTE.error : state === "watch" ? PALETTE.warn : PALETTE.ok;
-  return (
-    <div
-      style={{
-        marginTop: 16,
-        padding: "0.875rem 1rem",
-        backgroundColor: PALETTE.bgPanel,
-        border: `1px solid ${PALETTE.border}`,
-        borderRadius: 8,
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 8 }}>
-        <p style={{ margin: 0, fontSize: "0.95rem", color: PALETTE.text }}>
-          Drift signal:{" "}
-          <span style={{ color, fontWeight: 700 }}>
-            {drift.toFixed(2)}× baseline CRPS
-          </span>
-        </p>
-        <span
-          style={{
-            fontSize: "0.65rem",
-            color,
-            fontWeight: 700,
-            letterSpacing: "0.05em",
-            textTransform: "uppercase",
-          }}
-        >
-          {state}
-        </span>
-      </div>
-      <div
-        style={{
-          height: 6,
-          backgroundColor: PALETTE.bg,
-          borderRadius: 3,
-          overflow: "hidden",
-          position: "relative",
-        }}
-      >
-        <div style={{ width: `${pct}%`, height: "100%", backgroundColor: color }} />
-        <div
-          style={{
-            position: "absolute",
-            left: `${(threshold / (threshold * 1.5)) * 100}%`,
-            top: 0,
-            bottom: 0,
-            width: 1,
-            backgroundColor: PALETTE.text,
-          }}
-          title={`halt threshold ${threshold.toFixed(1)}×`}
-        />
-      </div>
-      <p style={{ margin: "6px 0 0 0", fontSize: "0.7rem", color: PALETTE.textDim }}>
-        Halt thresholds: 1.5× operational, 2.0× tactical, 3.0× strategic.
-        Plan2Cash consumes this signal in the closed-loop critic.
-      </p>
-    </div>
   );
 }
 

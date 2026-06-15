@@ -41,7 +41,7 @@ from demand_signal_os.leaderboard.types import (
     LeaderboardResult,
 )
 from demand_signal_os.forecasting.protocol import ForecastRequest
-from demand_signal_os.ops_schemas import DemandActual, ForecastBundle, TimeBucket
+from demand_signal_os.ops_schemas import DemandActual, ForecastBundle, Quantiles, TimeBucket
 
 _HASH_PRECISION = 6  # decimals retained in the reproducibility digest
 
@@ -205,3 +205,32 @@ def fit_winner_bundle(
         data_cut_timestamp=config.data_cut_timestamp,
     )
     return method.fit_predict(request)
+
+
+def forecast_path(
+    actuals: list[DemandActual], config: LeaderboardConfig, method_id: str
+) -> list[Quantiles]:
+    """Per-step quantiles over the horizon (a real WIDENING band).
+
+    Uses the method's native ``fit_predict_path`` (every step's interval, which
+    grows with horizon) when available; otherwise falls back to the single
+    ``fit_predict`` distribution repeated (flat) for methods without a path.
+    Additive: ``fit_predict`` and the leaderboard ranking are untouched.
+    """
+    method = build_method(method_id, config)
+    history = [r.units_sold for r in actuals]
+    horizon_buckets = _next_buckets(actuals[-1].bucket, config.horizon)
+    request = ForecastRequest(
+        sku_id=config.sku_id,
+        location_id=config.location_id,
+        history=history,
+        history_buckets=[r.bucket for r in actuals],
+        horizon_buckets=horizon_buckets,
+        horizon_label=config.horizon_label,
+        seed=config.seed,
+        data_cut_timestamp=config.data_cut_timestamp,
+    )
+    path_fn = getattr(method, "fit_predict_path", None)
+    if path_fn is not None:
+        return list(path_fn(request))
+    return [method.fit_predict(request).quantiles] * config.horizon
