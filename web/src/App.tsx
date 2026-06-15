@@ -144,7 +144,7 @@ function Header({ token, onSignOut }: { token: string; onSignOut: () => void }) 
           <span style={{ fontSize: "0.7rem", color: PALETTE.textFaint }}>v0.1 preview</span>
         </h1>
         <p style={{ margin: 0, fontSize: "0.75rem", color: PALETTE.textFaint }}>
-          Censoring-honest probabilistic forecasting + drift signal
+          Censoring-honest probabilistic forecasting + forecaster leaderboard
         </p>
       </div>
       <nav style={{ display: "flex", gap: 12, alignItems: "center" }}>
@@ -402,15 +402,15 @@ function WorkbenchSection({ token }: { token: string }) {
   }
 
   function handleRun() {
-    // v0.1: no DSO HTTP API; the "run" is the in-page synthetic
-    // ForecastPreview below. Surface this honestly.
+    // The probabilistic forecast below is computed LIVE by the engine
+    // (ForecastPreview -> POST /forecast/single) from a sample series.
+    // Batch-forecasting the UPLOADED workbook over the DSO API is v0.1.5.
     setRunOutput({
       ok: true,
       note:
-        "v0.1 run: the validated workbook would be passed to DSO's Python " +
-        "library for the actual forecasting pass. The sample band + drift " +
-        "gauge below illustrates the shape of the output. v0.1.5 wires a " +
-        "real DSO HTTP API and replaces this stub with the live result.",
+        "Validated. The probabilistic forecast below is computed live by the " +
+        "engine from the series shown (POST /forecast/single). Batch-forecasting " +
+        "your uploaded history over the DSO HTTP API lands in v0.1.5.",
     });
   }
 
