@@ -196,11 +196,13 @@ platforms_os/
     tests/
 ```
 
-**`ops_schemas` promotion policy (YAGNI-deferred):**
+**`ops_schemas` promotion policy — ✅ PROMOTION COMPLETED (Phase C, 2026-06-08).**
 
-- **v0.1 default:** `ops_schemas/` lives nested inside this repo as
-  `demand_signal_os.ops_schemas`. No external consumer imports these
-  types yet, so the nested form has zero cost.
+> **SUPERSEDED:** the promotion below has SHIPPED. `ops_schemas` now lives at `platforms_os/packages/ops_schemas/` (pydantic-only, `py.typed`); DemandSignalOS, PlanningOS, and others import from there. The deferred-nested approach documented here is historical (kept for rationale).
+
+- **v0.1 default (historical):** `ops_schemas/` lived nested inside this repo as
+  `demand_signal_os.ops_schemas`. No external consumer imported these
+  types yet, so the nested form had zero cost.
 - **Promotion trigger:** the first SimOS-side or PlanningOS-side line
   that does `from demand_signal_os.ops_schemas import ...`. At that
   point the transitive-dependency cost (scipy / lightgbm / pandas)
