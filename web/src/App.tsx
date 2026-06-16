@@ -1082,6 +1082,26 @@ function Footer() {
         fontSize: "0.75rem",
       }}
     >
+      <div style={{ marginBottom: "0.75rem" }}>
+        <span style={{ textTransform: "uppercase", letterSpacing: "0.06em", color: PALETTE.textDim, marginRight: "0.5rem" }}>
+          Engines:
+        </span>
+        {([
+          ["SimOS", "https://supplychain.sim-os.ai"],
+          ["PlanningOS", "https://planning.sim-os.ai"],
+          ["DemandSignalOS", "https://demand-signal.sim-os.ai"],
+          ["Order2Cash", "https://o2c.sim-os.ai"],
+          ["Plan2Cash", "https://plan2cash.sim-os.ai"],
+          ["AI Agents", "https://agents.sim-os.ai"],
+        ] as [string, string][]).map(([label, href], i) => (
+          <span key={href}>
+            {i > 0 ? " · " : ""}
+            <a href={href} style={{ color: PALETTE.link, textDecoration: "none" }}>
+              {label}
+            </a>
+          </span>
+        ))}
+      </div>
       DemandSignalOS · included in SimOS{" "}
       <a href="https://sim-os.ai/pricing" style={{ color: PALETTE.link, textDecoration: "none" }}>
         Premium
