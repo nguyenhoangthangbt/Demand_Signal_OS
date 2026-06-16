@@ -268,12 +268,15 @@ function TokenGate({
             color: PALETTE.textDim,
           }}
         >
-          Paste your <code style={{ color: PALETTE.textMuted }}>mao_live_*</code> tier-key
-          to access the DSO templates. New here? Email{" "}
+          Paste your Enterprise{" "}
+          <code style={{ color: PALETTE.textMuted }}>mao_live_*</code> tier-key
+          to unlock the template hub (download / validate / run xlsx workbooks
+          through the Plan2Cash router). The live probabilistic forecast below
+          works without a key. New here? Email{" "}
           <a href="mailto:admin@sim-os.ai" style={{ color: PALETTE.link }}>
             admin@sim-os.ai
           </a>{" "}
-          for access. DSO is included in SimOS Premium and Enterprise.
+          for access.
         </p>
         <input
           type="password"
@@ -350,9 +353,19 @@ function WorkbenchSection({
     })
       .then((r) => {
         if (!r.ok) {
-          if (r.status === 401 || r.status === 403) {
+          // 403 vs 401 are distinct failures — the old code collapsed both into
+          // a misleading "invalid key" message. 403 means the key IS valid but
+          // not provisioned for Enterprise (the template hub runs through the
+          // Enterprise-gated Plan2Cash router); 401 means the key isn't a
+          // recognized mao_live_* key at all.
+          if (r.status === 403) {
             throw new Error(
-              "That tier key was not accepted. Check that it is a valid, active mao_live_* key, or contact admin@sim-os.ai for access.",
+              "The template hub requires an Enterprise tier-key. Your key is valid but isn't provisioned for Enterprise. The live forecast below still works without a key — contact admin@sim-os.ai to upgrade.",
+            );
+          }
+          if (r.status === 401) {
+            throw new Error(
+              "That tier key wasn't recognized — it must be an active mao_live_* key. Contact admin@sim-os.ai for access.",
             );
           }
           throw new Error(`${r.status} ${r.statusText}`);
