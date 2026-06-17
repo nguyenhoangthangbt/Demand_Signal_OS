@@ -68,6 +68,22 @@ def create_app() -> Any:
         """Health check endpoint."""
         return {"status": "ok", "engine": "demandsignal"}
 
+    # Cross-engine SSO (Phase 2b): resolver for a mao_live_ bearer -> plan, used
+    # by require_dso_access on the leaderboard router. The customer presents
+    # their own token (no admin credential). Guarded so the app still starts if
+    # platform_auth isn't installed (the dso_live_ X-API-Key path still works).
+    try:
+        import os
+
+        from platform_auth import MaoTierResolver
+
+        mao_url = os.environ.get("DSO_MAO_API_URL") or os.environ.get(
+            "P2C_MAO_API_URL", "http://master-agents-api:8000"
+        )
+        app.state.mao_tier_resolver = MaoTierResolver(mao_url)
+    except ImportError:
+        app.state.mao_tier_resolver = None
+
     app.include_router(receipt_router, prefix="/api/v1")
     app.include_router(leaderboard_router, prefix="/api/v1")
     app.include_router(forecast_router, prefix="/api/v1")

@@ -14,11 +14,19 @@ Behaviour:
 
 from __future__ import annotations
 
+import hmac
 import logging
 import os
 from typing import Annotated
 
-from fastapi import Header, HTTPException, status
+from fastapi import Header, HTTPException, Request, status
+
+try:  # cross-engine SSO tier vocabulary (optional at import time)
+    from ops_schemas.tier import Tier, meets_min
+
+    _TIER_OK = True
+except ImportError:  # pragma: no cover
+    _TIER_OK = False
 
 logger = logging.getLogger("demand_signal_os.api.auth")
 
@@ -46,9 +54,41 @@ async def require_api_key(
             _DEV_MODE_WARNED = True
         return "dev"
 
-    if x_api_key is None or x_api_key not in allowed:
+    if x_api_key is None or not any(
+        hmac.compare_digest(x_api_key, k) for k in allowed
+    ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="missing or invalid X-API-Key",
         )
     return x_api_key
+
+
+async def require_dso_access(
+    request: Request,
+    x_api_key: Annotated[str | None, Header()] = None,
+    authorization: Annotated[str | None, Header()] = None,
+) -> str:
+    """Dual-accept gate for DSO value endpoints (the leaderboard).
+
+    Cross-engine SSO (Phase 2b): accept EITHER a customer's ``mao_live_`` bearer
+    resolving to >= PREMIUM (via the shared platform_auth resolver on
+    ``app.state.mao_tier_resolver``), OR the existing ``dso_live_`` ``X-API-Key``
+    (transition). Fail-soft-then-closed on the bearer path: the resolver raises
+    401 on a revoked key, 503 if MAO is unreachable with a cold cache. Keeps
+    dev-open when ``DSO_API_KEYS`` is unset AND no bearer is presented.
+    """
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.removeprefix("Bearer ").strip()
+        if token.startswith("mao_live_"):
+            resolver = getattr(request.app.state, "mao_tier_resolver", None)
+            if resolver is not None and _TIER_OK:
+                plan = await resolver.resolve_plan(token)
+                if not meets_min(plan, Tier.PREMIUM):
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=f"DSO requires premium+; your plan is '{plan}'.",
+                    )
+                return f"mao:{plan}"
+            # resolver/tier unavailable -> fall through to the dso_live_ path
+    return await require_api_key(x_api_key)

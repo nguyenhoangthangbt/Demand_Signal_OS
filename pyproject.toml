@@ -16,6 +16,8 @@ dependencies = [
     # before `pip install -e Demand_Signal_OS`. Promoted 2026-06-08 per
     # CONSTITUTION §8.
     "ops_schemas",
+    # Cross-engine SSO: shared mao_live_ tier resolver (platforms_os/packages/platform_auth).
+    "platform_auth",
     # Pinned per CONSTITUTION §10 Nixtla wrap decision (Apache 2.0)
     "statsforecast==2.0.3",
     "hierarchicalforecast==1.5.1",
