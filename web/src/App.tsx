@@ -375,7 +375,7 @@ function TokenGate({
             color: PALETTE.textDim,
           }}
         >
-          Paste your Premium{" "}
+          Paste your Enterprise{" "}
           <code style={{ color: PALETTE.textMuted }}>mao_live_*</code> tier-key
           to unlock the template hub (download / validate / run xlsx workbooks
           through the Plan2Cash router). The live probabilistic forecast below
@@ -467,7 +467,7 @@ function WorkbenchSection({
           // recognized mao_live_* key at all.
           if (r.status === 403) {
             throw new Error(
-              "The template hub requires a Premium tier-key. Your key is valid but isn't provisioned for Premium. The live forecast below still works without a key. Contact admin@sim-os.ai to upgrade.",
+              "The template hub requires an Enterprise tier-key. Your key is valid but isn't provisioned for Enterprise. The live forecast below still works without a key. Contact admin@sim-os.ai to upgrade.",
             );
           }
           if (r.status === 401) {
