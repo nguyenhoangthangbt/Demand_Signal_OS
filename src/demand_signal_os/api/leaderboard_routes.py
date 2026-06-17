@@ -27,9 +27,9 @@ from typing import Any, Literal
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from demand_signal_os.api.auth import require_api_key
+from demand_signal_os.api.auth import require_dso_access
 
-router = APIRouter(tags=["leaderboard"], dependencies=[Depends(require_api_key)])
+router = APIRouter(tags=["leaderboard"], dependencies=[Depends(require_dso_access)])
 
 # In-memory run store (single-process v0.1.5). run_id -> job dict.
 _RUNS: dict[str, dict[str, Any]] = {}

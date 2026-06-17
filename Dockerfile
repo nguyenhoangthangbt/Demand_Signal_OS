@@ -35,8 +35,12 @@ COPY packages/excel_io/src/ ./excel_io_pkg/src/
 COPY packages/trust_gate/pyproject.toml ./trust_gate_pkg/
 COPY packages/trust_gate/src/ ./trust_gate_pkg/src/
 
+# platform_auth — shared mao_live_ tier resolver for cross-engine SSO (Phase 2b).
+COPY packages/platform_auth/pyproject.toml ./platform_auth_pkg/
+COPY packages/platform_auth/src/ ./platform_auth_pkg/src/
+
 RUN pip install --no-cache-dir --prefix=/install \
-    "./ops_schemas_pkg/" "./excel_io_pkg/" "./trust_gate_pkg/" \
+    "./ops_schemas_pkg/" "./excel_io_pkg/" "./trust_gate_pkg/" "./platform_auth_pkg/" \
     "fastapi" "uvicorn[standard]"
 
 # ---------------------------------------------------------------------------

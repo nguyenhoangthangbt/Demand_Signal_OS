@@ -125,3 +125,64 @@ def test_auth_enforced_when_keys_set(monkeypatch: pytest.MonkeyPatch) -> None:
         headers={"X-API-Key": "dso_live_secret123"},
     )
     assert resp.status_code == 404
+
+
+# --- Cross-engine SSO (Phase 2b): mao_live_ bearer dual-accept --------------
+
+
+class _FakeResolver:
+    """Stand-in for platform_auth.MaoTierResolver."""
+
+    def __init__(self, *, plan: str | None = None, raise_status: int | None = None):
+        self._plan = plan
+        self._raise = raise_status
+
+    async def resolve_plan(self, token: str) -> str:
+        from fastapi import HTTPException
+
+        if self._raise is not None:
+            raise HTTPException(status_code=self._raise, detail="resolver")
+        assert self._plan is not None
+        return self._plan
+
+
+def _client_with_resolver(**kw: object) -> TestClient:
+    app = create_app()
+    app.state.mao_tier_resolver = _FakeResolver(**kw)  # type: ignore[arg-type]
+    return TestClient(app)
+
+
+def test_mao_premium_bearer_passes_auth() -> None:
+    c = _client_with_resolver(plan="premium")
+    r = c.get(
+        "/api/v1/forecast/leaderboard/lb_none",
+        headers={"Authorization": "Bearer mao_live_x"},
+    )
+    assert r.status_code == 404  # passed auth (run missing), not 401/403
+
+
+def test_mao_enterprise_bearer_passes_auth() -> None:
+    c = _client_with_resolver(plan="enterprise")
+    r = c.get(
+        "/api/v1/forecast/leaderboard/lb_none",
+        headers={"Authorization": "Bearer mao_live_x"},
+    )
+    assert r.status_code == 404
+
+
+def test_mao_free_bearer_denied_403() -> None:
+    c = _client_with_resolver(plan="free")
+    r = c.get(
+        "/api/v1/forecast/leaderboard/lb_none",
+        headers={"Authorization": "Bearer mao_live_x"},
+    )
+    assert r.status_code == 403
+
+
+def test_mao_revoked_bearer_401() -> None:
+    c = _client_with_resolver(raise_status=401)
+    r = c.get(
+        "/api/v1/forecast/leaderboard/lb_none",
+        headers={"Authorization": "Bearer mao_live_x"},
+    )
+    assert r.status_code == 401
