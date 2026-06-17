@@ -23,11 +23,15 @@ COPY packages/excel_io/src/ ./excel_io_pkg/src/
 COPY packages/trust_gate/pyproject.toml ./trust_gate_pkg/
 COPY packages/trust_gate/src/ ./trust_gate_pkg/src/
 
+# platform_auth — shared mao_live_ tier resolver for cross-engine SSO (Phase 2b).
+COPY packages/platform_auth/pyproject.toml ./platform_auth_pkg/
+COPY packages/platform_auth/src/ ./platform_auth_pkg/src/
+
 # Install local packages + fastapi/uvicorn + the forecasting stack (pinned to
 # the DSO pyproject deps). The src tree is copied (not pip-installed) onto
 # PYTHONPATH at runtime, so we install the third-party deps explicitly here.
 RUN pip install --no-cache-dir --prefix=/install \
-    "./ops_schemas_pkg/" "./excel_io_pkg/" "./trust_gate_pkg/" \
+    "./ops_schemas_pkg/" "./excel_io_pkg/" "./trust_gate_pkg/" "./platform_auth_pkg/" \
     "fastapi" "uvicorn[standard]" \
     "statsforecast==2.0.3" "hierarchicalforecast==1.5.1" "utilsforecast>=0.2.0,<1.0" \
     "lightgbm>=4.0,<5.0" "numpy>=1.24,<3.0" "pandas>=2.0,<3.0" "scipy>=1.11,<2.0" \
