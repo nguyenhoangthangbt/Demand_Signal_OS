@@ -1,6 +1,6 @@
 // DemandSignalOS v0.1 standalone web UI.
 //
-// DSO is library-first per CONSTITUTION L2 — no native DSO HTTP API
+// DSO is library-first per CONSTITUTION L2 · no native DSO HTTP API
 // in v0.1 (port 8006 reserved for v0.1.5). This SPA hits the
 // Plan2Cash router (plan2cash-api.sim-os.ai) for the demand_history
 // + demand_history_multi templates that the DSO builder/schemas
@@ -55,8 +55,8 @@ const PALETTE = {
 } as const;
 
 const CENSORING_FLAGS = [
-  { flag: "OBSERVED", color: PALETTE.ok, blurb: "Plain unconstrained observation. Shelf stocked, customer arrived, unit moved." },
-  { flag: "REAL_ZERO", color: PALETTE.textDim, blurb: "True zero demand. Not a missing read, not a stockout, and distinct so the forecaster does not treat it as missing." },
+  { flag: "OBSERVED", color: PALETTE.ok, blurb: "Plain unconstrained observation. The shelf was stocked and the recorded units reflect real demand." },
+  { flag: "REAL_ZERO", color: PALETTE.textDim, blurb: "True zero demand, kept distinct from a missing read so the forecaster never treats a genuine zero as a gap." },
   { flag: "STOCKOUT_CENSORED", color: PALETTE.warn, blurb: "Demand exceeded supply; recorded sales are a LOWER bound. Naive averaging here underestimates demand and starves replenishment." },
   { flag: "PARTIAL_CENSORED", color: PALETTE.warn, blurb: "Part of the period was supply-constrained. Mixed-mode; treated as a lower bound on the censored fraction." },
   { flag: "UNKNOWN", color: PALETTE.textFaint, blurb: "Missing meta. Surfaced verbatim so the planner can repair before the run, not silently coerced to OBSERVED." },
@@ -120,8 +120,7 @@ export default function App() {
             <WorkbenchSection token={token} onForecastSeries={setForecastSeries} />
           )}
           <ForecastPreview series={forecastSeries} />
-          <CensoringSection />
-          <ConsumersSection />
+          <HowItWorks />
         </>
       )}
       <Footer />
@@ -198,38 +197,146 @@ function Header({ token, onSignOut }: { token: string; onSignOut: () => void }) 
 
 function Hero() {
   return (
-    <section style={{ padding: "2.5rem 1.5rem 1.5rem", maxWidth: 900, margin: "0 auto" }}>
-      <span
-        style={{
-          fontSize: "0.65rem",
-          padding: "2px 8px",
-          backgroundColor: PALETTE.warnBg,
-          color: PALETTE.warn,
-          border: `1px solid ${PALETTE.warnBorder}`,
-          borderRadius: 3,
-          letterSpacing: "0.05em",
-          fontWeight: 600,
-        }}
-      >
-        v0.1 PREVIEW · DSO is library-first; runtime is via plan2cash-api
-      </span>
-      <h2 style={{ marginTop: 12, fontSize: "2rem", lineHeight: 1.2 }}>
-        Forecasts that admit what they don't know.
-      </h2>
-      <p
-        style={{
-          fontSize: "1.05rem",
-          color: PALETTE.textMuted,
-          lineHeight: 1.6,
-          maxWidth: 720,
-        }}
-      >
-        Quantile-band probabilistic forecasts with an explicit censoring
-        taxonomy: every observation tagged OBSERVED, REAL_ZERO,
-        STOCKOUT_CENSORED, PARTIAL_CENSORED, UNKNOWN. Censoring is never
-        silently coerced to zero. That is the moat over naive averaging.
-      </p>
+    <section
+      style={{
+        position: "relative",
+        padding: "2.5rem 1.5rem 1.5rem",
+        maxWidth: 900,
+        margin: "0 auto",
+        overflow: "hidden",
+      }}
+    >
+      <HeroFanChart />
+      <div style={{ position: "relative", maxWidth: 640 }}>
+        <span
+          style={{
+            fontSize: "0.65rem",
+            padding: "2px 8px",
+            backgroundColor: PALETTE.warnBg,
+            color: PALETTE.warn,
+            border: `1px solid ${PALETTE.warnBorder}`,
+            borderRadius: 3,
+            letterSpacing: "0.05em",
+            fontWeight: 600,
+          }}
+        >
+          v0.1 PREVIEW · DSO is library-first; runtime is via plan2cash-api
+        </span>
+        <h2 style={{ marginTop: 12, fontSize: "2rem", lineHeight: 1.2 }}>
+          Forecasts that admit what they don't know.
+        </h2>
+        <p
+          style={{
+            fontSize: "1.05rem",
+            color: PALETTE.textMuted,
+            lineHeight: 1.6,
+            maxWidth: 580,
+          }}
+        >
+          Every forecast ships as a probability band instead of a single number,
+          so you can plan against the uncertainty you actually face.
+        </p>
+      </div>
     </section>
+  );
+}
+
+// HeroFanChart · a lightweight decorative quantile-band ("fan chart") motif for
+// the hero. Distinct from the live ForecastPreview lower down: this draws no real
+// data, runs purely on SVG + CSS (no engine call), and goes still under
+// prefers-reduced-motion. The widening band echoes DSO's "uncertainty propagates
+// with horizon" idea as an atmospheric accent.
+function HeroFanChart() {
+  const [reduced, setReduced] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const set = () => setReduced(mq.matches);
+    set();
+    mq.addEventListener("change", set);
+    return () => mq.removeEventListener("change", set);
+  }, []);
+
+  // A smooth rising median with a fan that widens left -> right. Each band is a
+  // single closed path: the upper edge forward, then the lower edge as a reversed
+  // cubic back to the start, then Z. q05/q95 outer, q25/q75 inner.
+  const W = 520;
+  const H = 300;
+  const baseY = 200;
+  const median = "M 0 230 C 90 215, 150 180, 230 150 S 380 110, 520 70";
+  // Inner band q25..q75 (closed): upper forward, lower reversed.
+  const bandInner =
+    "M 0 222 C 90 200, 150 150, 230 108 S 380 40, 520 -18 " +
+    "L 520 158 C 380 180, 300 200, 230 192 S 90 230, 0 238 Z";
+  // Outer band q05..q95 (closed), wider still.
+  const bandOuter =
+    "M 0 216 C 90 188, 150 124, 230 70 S 380 -8, 520 -70 " +
+    "L 520 200 C 380 214, 300 220, 230 222 S 90 240, 0 244 Z";
+
+  return (
+    <div
+      aria-hidden="true"
+      style={{
+        position: "absolute",
+        top: 0,
+        right: 0,
+        width: "min(55%, 520px)",
+        height: "100%",
+        pointerEvents: "none",
+        opacity: 0.9,
+      }}
+    >
+      {/* Atmospheric glow behind the fan. */}
+      <div
+        className={reduced ? "dsohero-glow dsohero-still" : "dsohero-glow"}
+        style={{
+          position: "absolute",
+          inset: 0,
+          background: `radial-gradient(circle at 70% 35%, ${PALETTE.band}33, transparent 60%)`,
+          filter: "blur(36px)",
+        }}
+      />
+      <svg
+        viewBox={`0 ${baseY - 260} ${W} ${H}`}
+        preserveAspectRatio="xMaxYMid slice"
+        style={{ position: "absolute", inset: 0, width: "100%", height: "100%", display: "block" }}
+      >
+        <defs>
+          <linearGradient id="dsohero-band" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stopColor={PALETTE.band} stopOpacity="0.04" />
+            <stop offset="100%" stopColor={PALETTE.band} stopOpacity="0.30" />
+          </linearGradient>
+          <linearGradient id="dsohero-band-outer" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stopColor={PALETTE.band} stopOpacity="0.02" />
+            <stop offset="100%" stopColor={PALETTE.band} stopOpacity="0.12" />
+          </linearGradient>
+        </defs>
+        {/* Outer band q05..q95. */}
+        <path d={bandOuter} fill="url(#dsohero-band-outer)" />
+        {/* Inner band q25..q75. */}
+        <path d={bandInner} fill="url(#dsohero-band)" />
+        {/* Median line, with a slow draw-on animation. */}
+        <path
+          d={median}
+          fill="none"
+          stroke={PALETTE.median}
+          strokeWidth={2}
+          strokeOpacity={0.85}
+          strokeLinecap="round"
+          className={reduced ? "" : "dsohero-draw"}
+        />
+      </svg>
+      <style>{`
+        .dsohero-glow { animation: dsohero-breathe 7s ease-in-out infinite; }
+        @keyframes dsohero-breathe { 0%,100% { opacity: .55; } 50% { opacity: .9; } }
+        .dsohero-draw {
+          stroke-dasharray: 760;
+          stroke-dashoffset: 760;
+          animation: dsohero-trace 3.2s cubic-bezier(.4,0,.2,1) forwards;
+        }
+        @keyframes dsohero-trace { to { stroke-dashoffset: 0; } }
+        .dsohero-still { animation: none !important; }
+      `}</style>
+    </div>
   );
 }
 
@@ -353,19 +460,19 @@ function WorkbenchSection({
     })
       .then((r) => {
         if (!r.ok) {
-          // 403 vs 401 are distinct failures — the old code collapsed both into
+          // 403 vs 401 are distinct failures · the old code collapsed both into
           // a misleading "invalid key" message. 403 means the key IS valid but
           // not provisioned for Enterprise (the template hub runs through the
           // Enterprise-gated Plan2Cash router); 401 means the key isn't a
           // recognized mao_live_* key at all.
           if (r.status === 403) {
             throw new Error(
-              "The template hub requires a Premium tier-key. Your key is valid but isn't provisioned for Premium. The live forecast below still works without a key — contact admin@sim-os.ai to upgrade.",
+              "The template hub requires a Premium tier-key. Your key is valid but isn't provisioned for Premium. The live forecast below still works without a key. Contact admin@sim-os.ai to upgrade.",
             );
           }
           if (r.status === 401) {
             throw new Error(
-              "That tier key wasn't recognized — it must be an active mao_live_* key. Contact admin@sim-os.ai for access.",
+              "That tier key wasn't recognized. It must be an active mao_live_* key. Contact admin@sim-os.ai for access.",
             );
           }
           throw new Error(`${r.status} ${r.statusText}`);
@@ -960,8 +1067,68 @@ function ForecastPreview({ series }: { series?: number[] | null }) {
         </svg>
       </div>
       {/* Drift is a monitoring signal (current vs training accuracy over time),
-          not a single-forecast output — wired to a real value in a follow-up,
+          not a single-forecast output · wired to a real value in a follow-up,
           not shown here as a hardcoded number. */}
+    </section>
+  );
+}
+
+// Collapsible "How it works" section. Holds the censoring taxonomy detail and
+// the DSO-output consumer table behind a single toggle so the landing leads with
+// the value line, not the enum table. Collapsed by default.
+function HowItWorks() {
+  const [open, setOpen] = useState(false);
+  return (
+    <section
+      style={{
+        padding: "1.5rem 1.5rem 2rem",
+        maxWidth: 900,
+        margin: "0 auto",
+        borderTop: `1px solid ${PALETTE.border}`,
+      }}
+    >
+      <button
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          width: "100%",
+          padding: "0.875rem 1rem",
+          backgroundColor: PALETTE.bgPanel,
+          border: `1px solid ${PALETTE.border}`,
+          borderRadius: 8,
+          cursor: "pointer",
+          color: PALETTE.text,
+          fontSize: "1rem",
+          fontWeight: 600,
+          textAlign: "left",
+        }}
+      >
+        <span>
+          How it works{" "}
+          <span style={{ fontWeight: 400, fontSize: "0.85rem", color: PALETTE.textDim }}>
+            · censoring taxonomy + who consumes DSO output
+          </span>
+        </span>
+        <span
+          style={{
+            transition: "transform 0.2s ease",
+            transform: open ? "rotate(180deg)" : "rotate(0deg)",
+            color: PALETTE.textDim,
+            fontSize: "0.8rem",
+          }}
+        >
+          ▼
+        </span>
+      </button>
+      {open && (
+        <div style={{ marginTop: 12 }}>
+          <CensoringSection />
+          <ConsumersSection />
+        </div>
+      )}
     </section>
   );
 }
@@ -970,13 +1137,12 @@ function CensoringSection() {
   return (
     <section
       style={{
-        padding: "2rem 1.5rem",
+        padding: "0.5rem 0 1.5rem",
         maxWidth: 900,
         margin: "0 auto",
-        borderTop: `1px solid ${PALETTE.border}`,
       }}
     >
-      <h3 style={{ fontSize: "1.1rem", marginBottom: 6 }}>Censoring taxonomy (the moat)</h3>
+      <h3 style={{ fontSize: "1.1rem", marginBottom: 6 }}>Censoring taxonomy</h3>
       <p
         style={{
           margin: 0,
