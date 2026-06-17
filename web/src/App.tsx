@@ -1,6 +1,6 @@
 // DemandSignalOS v0.1 standalone web UI.
 //
-// DSO is library-first per CONSTITUTION L2 — no native DSO HTTP API
+// DSO is library-first per CONSTITUTION L2 · no native DSO HTTP API
 // in v0.1 (port 8006 reserved for v0.1.5). This SPA hits the
 // Plan2Cash router (plan2cash-api.sim-os.ai) for the demand_history
 // + demand_history_multi templates that the DSO builder/schemas
@@ -241,7 +241,7 @@ function Hero() {
   );
 }
 
-// HeroFanChart — a lightweight decorative quantile-band ("fan chart") motif for
+// HeroFanChart · a lightweight decorative quantile-band ("fan chart") motif for
 // the hero. Distinct from the live ForecastPreview lower down: this draws no real
 // data, runs purely on SVG + CSS (no engine call), and goes still under
 // prefers-reduced-motion. The widening band echoes DSO's "uncertainty propagates
@@ -460,19 +460,19 @@ function WorkbenchSection({
     })
       .then((r) => {
         if (!r.ok) {
-          // 403 vs 401 are distinct failures — the old code collapsed both into
+          // 403 vs 401 are distinct failures · the old code collapsed both into
           // a misleading "invalid key" message. 403 means the key IS valid but
           // not provisioned for Enterprise (the template hub runs through the
           // Enterprise-gated Plan2Cash router); 401 means the key isn't a
           // recognized mao_live_* key at all.
           if (r.status === 403) {
             throw new Error(
-              "The template hub requires a Premium tier-key. Your key is valid but isn't provisioned for Premium. The live forecast below still works without a key — contact admin@sim-os.ai to upgrade.",
+              "The template hub requires a Premium tier-key. Your key is valid but isn't provisioned for Premium. The live forecast below still works without a key. Contact admin@sim-os.ai to upgrade.",
             );
           }
           if (r.status === 401) {
             throw new Error(
-              "That tier key wasn't recognized — it must be an active mao_live_* key. Contact admin@sim-os.ai for access.",
+              "That tier key wasn't recognized. It must be an active mao_live_* key. Contact admin@sim-os.ai for access.",
             );
           }
           throw new Error(`${r.status} ${r.statusText}`);
@@ -1067,7 +1067,7 @@ function ForecastPreview({ series }: { series?: number[] | null }) {
         </svg>
       </div>
       {/* Drift is a monitoring signal (current vs training accuracy over time),
-          not a single-forecast output — wired to a real value in a follow-up,
+          not a single-forecast output · wired to a real value in a follow-up,
           not shown here as a hardcoded number. */}
     </section>
   );
