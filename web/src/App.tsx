@@ -32,6 +32,24 @@ function useHashView(): string {
   return hash;
 }
 
+// useMatchMedia · subscribes to a CSS media query and re-renders on changes.
+// Used to swap inline-style layouts at breakpoints (React inline styles do not
+// support @media — this is the standard workaround). The mobile breakpoint is
+// 768px (matches Tailwind's md: cutoff most common across the SimOS family).
+function useMatchMedia(query: string): boolean {
+  const [matches, setMatches] = useState<boolean>(() =>
+    typeof window !== "undefined" ? window.matchMedia(query).matches : false,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(query);
+    const onChange = () => setMatches(mq.matches);
+    onChange();
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, [query]);
+  return matches;
+}
+
 const PALETTE = {
   bg: "#0f172a",
   bgPanel: "#1e293b",
@@ -129,57 +147,57 @@ export default function App() {
 }
 
 function Header({ token, onSignOut }: { token: string; onSignOut: () => void }) {
+  const isMobile = useMatchMedia("(max-width: 640px)");
   return (
     <header
       style={{
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
-        padding: "0.75rem 1.5rem",
+        gap: 8,
+        padding: isMobile ? "0.6rem 1rem" : "0.75rem 1.5rem",
         borderBottom: `1px solid ${PALETTE.border}`,
         backgroundColor: PALETTE.bgPanel,
       }}
     >
-      <div>
-        <h1 style={{ margin: 0, fontSize: "1.1rem" }}>
+      <div style={{ minWidth: 0, flexShrink: 1 }}>
+        <h1 style={{ margin: 0, fontSize: isMobile ? "0.95rem" : "1.1rem", whiteSpace: "nowrap" }}>
           DemandSignalOS{" "}
           <span style={{ fontSize: "0.7rem", color: PALETTE.textFaint }}>v0.1 preview</span>
         </h1>
-        <p style={{ margin: 0, fontSize: "0.75rem", color: PALETTE.textFaint }}>
-          Censoring-honest probabilistic forecasting + forecaster leaderboard
-        </p>
+        {/* Brand sub-line hidden on mobile to keep the header to a single row. */}
+        {!isMobile && (
+          <p style={{ margin: 0, fontSize: "0.75rem", color: PALETTE.textFaint }}>
+            Censoring-honest probabilistic forecasting + forecaster leaderboard
+          </p>
+        )}
       </div>
-      <nav style={{ display: "flex", gap: 12, alignItems: "center" }}>
+      <nav style={{ display: "flex", gap: isMobile ? 8 : 12, alignItems: "center", flexShrink: 0 }}>
         <a
           href="#leaderboard"
-          style={{ color: PALETTE.link, fontSize: "0.8rem", textDecoration: "none" }}
+          style={{ color: PALETTE.link, fontSize: isMobile ? "0.75rem" : "0.8rem", textDecoration: "none" }}
         >
           Leaderboard
         </a>
         <a
           href="#verify"
-          style={{ color: PALETTE.link, fontSize: "0.8rem", textDecoration: "none" }}
+          style={{ color: PALETTE.link, fontSize: isMobile ? "0.75rem" : "0.8rem", textDecoration: "none" }}
         >
           Verify
         </a>
-        <a
-          href="#"
-          style={{ color: PALETTE.link, fontSize: "0.8rem", textDecoration: "none" }}
-        >
-          Workbench
-        </a>
+        {/* Plan2Cash cross-link — full label on desktop, just the arrow + initials on mobile. */}
         <a
           href="https://plan2cash.sim-os.ai"
-          style={{ color: PALETTE.link, fontSize: "0.8rem", textDecoration: "none" }}
+          style={{ color: PALETTE.link, fontSize: isMobile ? "0.75rem" : "0.8rem", textDecoration: "none" }}
         >
-          ↗ Plan2Cash
+          {isMobile ? "↗ P2C" : "↗ Plan2Cash"}
         </a>
         {token && (
           <button
             onClick={onSignOut}
             style={{
-              fontSize: "0.7rem",
-              padding: "4px 10px",
+              fontSize: isMobile ? "0.65rem" : "0.7rem",
+              padding: isMobile ? "3px 8px" : "4px 10px",
               backgroundColor: "transparent",
               border: `1px solid ${PALETTE.border}`,
               borderRadius: 4,
@@ -196,21 +214,27 @@ function Header({ token, onSignOut }: { token: string; onSignOut: () => void }) 
 }
 
 function Hero() {
+  const isMobile = useMatchMedia("(max-width: 768px)");
   return (
     <section
       style={{
         position: "relative",
-        padding: "2.5rem 1.5rem 1.5rem",
+        padding: isMobile ? "1.75rem 1rem 1rem" : "2.5rem 1.5rem 1.5rem",
         maxWidth: 900,
         margin: "0 auto",
         overflow: "hidden",
       }}
     >
-      <HeroFanChart />
-      <div style={{ position: "relative", maxWidth: 640 }}>
+      {/* Desktop: fan chart as absolute overlay on the right (decorative).
+          Mobile: fan chart renders below the headline as a static panel so
+          it does not overlap the text. Old behavior was a 55%-wide absolute
+          element that bled across the H1 on <640px viewports. */}
+      {!isMobile && <HeroFanChart />}
+      <div style={{ position: "relative", maxWidth: isMobile ? "100%" : 640 }}>
         <span
           style={{
-            fontSize: "0.65rem",
+            display: "inline-block",
+            fontSize: isMobile ? "0.6rem" : "0.65rem",
             padding: "2px 8px",
             backgroundColor: PALETTE.warnBg,
             color: PALETTE.warn,
@@ -222,21 +246,22 @@ function Hero() {
         >
           v0.1 PREVIEW · DSO is library-first; runtime is via plan2cash-api
         </span>
-        <h2 style={{ marginTop: 12, fontSize: "2rem", lineHeight: 1.2 }}>
+        <h2 style={{ marginTop: 12, fontSize: isMobile ? "1.55rem" : "2rem", lineHeight: 1.2 }}>
           Forecasts that admit what they don't know.
         </h2>
         <p
           style={{
-            fontSize: "1.05rem",
+            fontSize: isMobile ? "0.95rem" : "1.05rem",
             color: PALETTE.textMuted,
             lineHeight: 1.6,
-            maxWidth: 580,
+            maxWidth: isMobile ? "100%" : 580,
           }}
         >
           Every forecast ships as a probability band instead of a single number,
           so you can plan against the uncertainty you actually face.
         </p>
       </div>
+      {isMobile && <HeroFanChart isMobile />}
     </section>
   );
 }
@@ -246,7 +271,7 @@ function Hero() {
 // data, runs purely on SVG + CSS (no engine call), and goes still under
 // prefers-reduced-motion. The widening band echoes DSO's "uncertainty propagates
 // with horizon" idea as an atmospheric accent.
-function HeroFanChart() {
+function HeroFanChart({ isMobile = false }: { isMobile?: boolean }) {
   const [reduced, setReduced] = useState(false);
   useEffect(() => {
     const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -275,15 +300,26 @@ function HeroFanChart() {
   return (
     <div
       aria-hidden="true"
-      style={{
-        position: "absolute",
-        top: 0,
-        right: 0,
-        width: "min(55%, 520px)",
-        height: "100%",
-        pointerEvents: "none",
-        opacity: 0.9,
-      }}
+      style={
+        isMobile
+          ? {
+              position: "relative",
+              width: "100%",
+              height: 170,
+              marginTop: "1.25rem",
+              pointerEvents: "none",
+              opacity: 0.85,
+            }
+          : {
+              position: "absolute",
+              top: 0,
+              right: 0,
+              width: "min(55%, 520px)",
+              height: "100%",
+              pointerEvents: "none",
+              opacity: 0.9,
+            }
+      }
     >
       {/* Atmospheric glow behind the fan. */}
       <div
