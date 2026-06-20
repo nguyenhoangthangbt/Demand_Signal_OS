@@ -5,6 +5,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="DemandSignalOS · censoring-honest probabilistic forecasting + drift signal for operations." />
     <title>DemandSignalOS · Probabilistic Forecasting + Drift</title>
+    <style>
+      /* Mobile-safety net: prevent any rogue absolutely-positioned child from
+         creating a horizontal scrollbar on phone viewports (DSO ships with
+         hero-overlay components whose pre-fix widths overflowed). Per-component
+         layouts opt in to responsive behavior via the useMatchMedia hook. */
+      *, *::before, *::after { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; max-width: 100vw; overflow-x: hidden; }
+      body { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+      img, svg { max-width: 100%; height: auto; }
+    </style>
   </head>
   <body>
     <div id="root"></div>
