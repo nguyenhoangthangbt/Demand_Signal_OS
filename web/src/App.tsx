@@ -128,6 +128,7 @@ export default function App() {
       ) : (
         <>
           <Hero />
+          <LeaderboardSection />
           {!token ? (
             <TokenGate
               draftToken={draftToken}
@@ -162,8 +163,7 @@ function Header({ token, onSignOut }: { token: string; onSignOut: () => void }) 
     >
       <div style={{ minWidth: 0, flexShrink: 1 }}>
         <h1 style={{ margin: 0, fontSize: isMobile ? "0.95rem" : "1.1rem", whiteSpace: "nowrap" }}>
-          DemandSignalOS{" "}
-          <span style={{ fontSize: "0.7rem", color: PALETTE.textFaint }}>v0.1 preview</span>
+          DemandSignalOS
         </h1>
         {/* Brand sub-line hidden on mobile to keep the header to a single row. */}
         {!isMobile && (
@@ -244,7 +244,7 @@ function Hero() {
             fontWeight: 600,
           }}
         >
-          v0.1 PREVIEW · DSO is library-first; runtime is via plan2cash-api
+          Probabilistic forecasting · censoring-honest
         </span>
         <h2 style={{ marginTop: 12, fontSize: isMobile ? "1.55rem" : "2rem", lineHeight: 1.2 }}>
           Forecasts that admit what they don't know.
@@ -373,6 +373,257 @@ function HeroFanChart({ isMobile = false }: { isMobile?: boolean }) {
         .dsohero-still { animation: none !important; }
       `}</style>
     </div>
+  );
+}
+
+// LeaderboardSection · animated illustration of the forecaster leaderboard,
+// DSO's monetizable USP. Six forecasting methods (realistic names: ETS,
+// ARIMA, Croston, LightGBM, Theta, Naïve-S) are ranked by mock CRPS scores;
+// every 6 s a pair swaps to convey "live competition." The top row carries
+// a golden star + a pulsing BEATS BENCHMARK tag. Smooth FLIP-style
+// translateY transitions between reshuffles. Pure CSS animation, dark-
+// native, reduced-motion aware.
+
+const FORECASTERS = [
+  { id: "lightgbm", name: "LightGBM",  family: "ml"    },
+  { id: "ets",      name: "ETS",       family: "stat"  },
+  { id: "arima",    name: "ARIMA",     family: "stat"  },
+  { id: "theta",    name: "Theta",     family: "stat"  },
+  { id: "croston",  name: "Croston",   family: "inter" },
+  { id: "naive",    name: "Naïve-S",   family: "base"  },
+] as const;
+
+// Rank-positioned CRPS scores (lower = better). Stay put visually while
+// methods rotate through positions — eye reads "methods racing for the top
+// slot," not "scores changing."
+const RANK_SCORES = ["2.143", "2.281", "2.456", "2.612", "2.788", "2.961"];
+const ROW_HEIGHT = 38;
+
+function LeaderboardSection() {
+  const [reduced, setReduced] = useState(false);
+  const [order, setOrder] = useState<readonly string[]>(() => FORECASTERS.map((m) => m.id));
+  const isMobile = useMatchMedia("(max-width: 640px)");
+
+  useEffect(() => {
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const set = () => setReduced(mq.matches);
+    set();
+    mq.addEventListener("change", set);
+    return () => mq.removeEventListener("change", set);
+  }, []);
+
+  useEffect(() => {
+    if (reduced) return;
+    const tick = window.setInterval(() => {
+      setOrder((prev) => {
+        // Swap one random adjacent pair so motion stays gentle, not chaotic.
+        const arr = [...prev];
+        const i = Math.floor(Math.random() * (arr.length - 1));
+        [arr[i], arr[i + 1]] = [arr[i + 1], arr[i]];
+        return arr;
+      });
+    }, 5500);
+    return () => window.clearInterval(tick);
+  }, [reduced]);
+
+  const panelMaxW = 480;
+  const panelH = ROW_HEIGHT * FORECASTERS.length + 12;
+
+  return (
+    <section
+      style={{
+        padding: "2.25rem 1.5rem 1.5rem",
+        maxWidth: 900,
+        margin: "0 auto",
+      }}
+    >
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: isMobile ? "minmax(0, 1fr)" : "minmax(0, 1fr) minmax(0, 1fr)",
+          gap: "2rem",
+          alignItems: "center",
+        }}
+      >
+        {/* Copy left. */}
+        <div>
+          <h2 style={{ margin: "0 0 0.6rem", fontSize: "1.45rem", lineHeight: 1.2, letterSpacing: "-0.01em" }}>
+            Forecasters that compete on your data.
+          </h2>
+          <p style={{ margin: "0 0 0.85rem", color: PALETTE.textMuted, fontSize: "0.98rem", lineHeight: 1.55, maxWidth: 420 }}>
+            Statistical, ML, and intermittent-demand methods run side by side. The winner is the one with the lowest forecast error on your own series, not on a benchmark dataset.
+          </p>
+          <a
+            href="#leaderboard"
+            style={{
+              fontSize: "0.85rem",
+              fontWeight: 600,
+              color: PALETTE.link,
+              textDecoration: "none",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4,
+            }}
+          >
+            Open the leaderboard →
+          </a>
+        </div>
+
+        {/* Animated leaderboard panel right. */}
+        <div
+          aria-hidden="true"
+          style={{
+            position: "relative",
+            width: "100%",
+            maxWidth: panelMaxW,
+            height: panelH,
+            margin: "0 auto",
+            backgroundColor: PALETTE.bgPanel,
+            border: `1px solid ${PALETTE.border}`,
+            borderRadius: 10,
+            padding: "6px 0",
+            overflow: "hidden",
+            boxShadow: "0 6px 24px rgba(7, 24, 60, 0.35)",
+          }}
+        >
+          {FORECASTERS.map((m) => {
+            const rank = order.indexOf(m.id);
+            const isWinner = rank === 0;
+            const barPct = 100 - rank * 13;
+            return (
+              <div
+                key={m.id}
+                className="dso-lb-row"
+                style={{
+                  position: "absolute",
+                  top: 6,
+                  left: 0,
+                  right: 0,
+                  height: ROW_HEIGHT,
+                  transform: `translateY(${rank * ROW_HEIGHT}px)`,
+                  transition: reduced ? "none" : "transform 0.85s cubic-bezier(0.4, 0, 0.2, 1)",
+                  display: "grid",
+                  gridTemplateColumns: "32px 1fr 24px",
+                  alignItems: "center",
+                  gap: 10,
+                  padding: "0 14px",
+                  opacity: isWinner ? 1 : 0.45 + (1 - rank / FORECASTERS.length) * 0.4,
+                }}
+              >
+                {/* Rank number with star on winner. */}
+                <span
+                  style={{
+                    fontFamily: "monospace",
+                    fontSize: "0.85rem",
+                    color: isWinner ? PALETTE.warn : PALETTE.textDim,
+                    fontWeight: 700,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 4,
+                  }}
+                >
+                  {isWinner && <span className="dso-lb-star" style={{ color: PALETTE.warn }}>★</span>}
+                  {!isWinner && <span>{rank + 1}</span>}
+                </span>
+
+                {/* Method name + horizontal accuracy bar. */}
+                <div style={{ minWidth: 0 }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "baseline",
+                      gap: 8,
+                      marginBottom: 4,
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontSize: "0.88rem",
+                        fontWeight: 600,
+                        color: isWinner ? PALETTE.text : PALETTE.textMuted,
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {m.name}
+                    </span>
+                    {isWinner && (
+                      <span
+                        className="dso-lb-badge"
+                        style={{
+                          fontSize: "0.58rem",
+                          fontWeight: 700,
+                          letterSpacing: "0.08em",
+                          color: PALETTE.warn,
+                          backgroundColor: PALETTE.warnBg,
+                          border: `1px solid ${PALETTE.warnBorder}`,
+                          padding: "2px 6px",
+                          borderRadius: 3,
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        BEATS BENCHMARK
+                      </span>
+                    )}
+                  </div>
+                  <div
+                    style={{
+                      height: 5,
+                      backgroundColor: PALETTE.border,
+                      borderRadius: 2,
+                      overflow: "hidden",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: `${barPct}%`,
+                        height: "100%",
+                        background: isWinner
+                          ? `linear-gradient(90deg, ${PALETTE.band}, ${PALETTE.warn})`
+                          : PALETTE.band,
+                        transition: reduced ? "none" : "width 0.85s cubic-bezier(0.4, 0, 0.2, 1)",
+                        opacity: isWinner ? 1 : 0.7,
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* CRPS score for this rank slot. */}
+                <span
+                  style={{
+                    fontFamily: "monospace",
+                    fontSize: "0.78rem",
+                    color: isWinner ? PALETTE.warn : PALETTE.textFaint,
+                    fontWeight: 600,
+                    textAlign: "right",
+                  }}
+                >
+                  {RANK_SCORES[rank]}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <style>{`
+        .dso-lb-star {
+          display: inline-block;
+          animation: dso-lb-twinkle 1.8s ease-in-out infinite;
+        }
+        @keyframes dso-lb-twinkle {
+          0%, 100% { opacity: 0.7; transform: scale(0.92); }
+          50%      { opacity: 1;   transform: scale(1.12); }
+        }
+        .dso-lb-badge { animation: dso-lb-glow 2.4s ease-in-out infinite; }
+        @keyframes dso-lb-glow {
+          0%, 100% { box-shadow: 0 0 0 rgba(252, 211, 77, 0); }
+          50%      { box-shadow: 0 0 12px rgba(252, 211, 77, 0.55); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .dso-lb-star, .dso-lb-badge { animation: none !important; }
+        }
+      `}</style>
+    </section>
   );
 }
 
@@ -580,15 +831,12 @@ function WorkbenchSection({
   }
 
   function handleRun() {
-    // The probabilistic forecast below is computed LIVE by the engine
-    // (ForecastPreview -> POST /forecast/single) from a sample series.
-    // Batch-forecasting the UPLOADED workbook over the DSO API is v0.1.5.
     setRunOutput({
       ok: true,
       note:
-        "Validated. The probabilistic forecast below is computed live by the " +
-        "engine from the series shown (POST /forecast/single). Batch-forecasting " +
-        "your uploaded history over the DSO HTTP API lands in v0.1.5.",
+        "Validated. The probabilistic forecast below is computed live from " +
+        "the series shown. Batch-forecasting your full uploaded history is " +
+        "on the roadmap.",
     });
   }
 
@@ -1109,9 +1357,9 @@ function ForecastPreview({ series }: { series?: number[] | null }) {
   );
 }
 
-// Collapsible "How it works" section. Holds the censoring taxonomy detail and
-// the DSO-output consumer table behind a single toggle so the landing leads with
-// the value line, not the enum table. Collapsed by default.
+// Collapsible "How it works" section. Holds the censoring taxonomy detail
+// behind a single toggle so the landing leads with the value line, not the
+// enum table. Collapsed by default.
 function HowItWorks() {
   const [open, setOpen] = useState(false);
   return (
@@ -1145,7 +1393,7 @@ function HowItWorks() {
         <span>
           How it works{" "}
           <span style={{ fontWeight: 400, fontSize: "0.85rem", color: PALETTE.textDim }}>
-            · censoring taxonomy + who consumes DSO output
+            · the censoring problem
           </span>
         </span>
         <span
@@ -1162,7 +1410,6 @@ function HowItWorks() {
       {open && (
         <div style={{ marginTop: 12 }}>
           <CensoringSection />
-          <ConsumersSection />
         </div>
       )}
     </section>
@@ -1230,62 +1477,6 @@ function CensoringSection() {
   );
 }
 
-function ConsumersSection() {
-  const rows = [
-    { who: "Plan2Cash router", what: "Pulls ForecastBundle + ForecastAccuracy through the ops_schemas Forecaster Protocol; uses drift_magnitude as the closed-loop halt signal.", url: "https://plan2cash.sim-os.ai" },
-    { who: "SimulationOS arrival adapter", what: "Converts ForecastBundle records into SimOS arrivals.schedule; mean clipped at 0 and noise_std capped to prevent negative draws.", url: "https://supplychain.sim-os.ai" },
-    { who: "PlanningOS drift provider", what: "Phase 7+drift v2 wires DSO accuracy.evaluate() per loop iter; the critic's drift_detected archetype consumes drift_magnitude.", url: "https://planning.sim-os.ai" },
-  ];
-  return (
-    <section
-      style={{
-        padding: "2rem 1.5rem",
-        maxWidth: 900,
-        margin: "0 auto",
-        borderTop: `1px solid ${PALETTE.border}`,
-      }}
-    >
-      <h3 style={{ fontSize: "1.1rem", marginBottom: 6 }}>Who consumes DSO output</h3>
-      <p style={{ margin: 0, marginBottom: 16, fontSize: "0.85rem", color: PALETTE.textDim }}>
-        DSO is library-first per CONSTITUTION L2. No public DSO HTTP API in
-        v0.1; consumers import DSO as a Python package. v0.1.5 adds the HTTP
-        API at port 8006.
-      </p>
-      <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-        {rows.map((r) => (
-          <li
-            key={r.who}
-            style={{
-              padding: "0.625rem 0.875rem",
-              marginBottom: 6,
-              backgroundColor: PALETTE.bgPanel,
-              border: `1px solid ${PALETTE.border}`,
-              borderRadius: 6,
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "baseline",
-                gap: 8,
-              }}
-            >
-              <p style={{ margin: 0, fontWeight: 600, color: PALETTE.text }}>{r.who}</p>
-              <a href={r.url} style={{ fontSize: "0.75rem", color: PALETTE.link, textDecoration: "none" }}>
-                ↗ open
-              </a>
-            </div>
-            <p style={{ margin: "4px 0 0 0", fontSize: "0.8rem", color: PALETTE.textMuted, lineHeight: 1.5 }}>
-              {r.what}
-            </p>
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-}
-
 function Footer() {
   return (
     <footer
@@ -1329,7 +1520,7 @@ function Footer() {
       <a href="https://plan2cash.sim-os.ai" style={{ color: PALETTE.link, textDecoration: "none" }}>
         Plan2Cash
       </a>{" "}
-      composition · v0.1 preview · admin@sim-os.ai
+      composition · admin@sim-os.ai
     </footer>
   );
 }
