@@ -474,6 +474,7 @@ function LeaderboardSection() {
           aria-hidden="true"
           style={{
             position: "relative",
+            width: "100%",
             maxWidth: panelMaxW,
             height: panelH,
             margin: "0 auto",
