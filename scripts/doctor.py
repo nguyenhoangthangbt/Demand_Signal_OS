@@ -135,10 +135,13 @@ def check_api_surface(timeout: int, repo_root: Path) -> dict:
 
 
 def check_persistence(timeout: int, repo_root: Path) -> dict:
-    """DSO at v0.1 is stateless library. Persistence N/A; AMBER not RED."""
-    return {"name": "persistence", "status": "AMBER",
-            "reason": "v0.1 library is stateless; persistence not applicable",
-            "evidence": {"version": "v0.1"}}
+    """DSO at v0.1 is a stateless forecasting library — it has no DB, session,
+    or durable store (no create_engine / DATABASE_URL anywhere in src). The
+    persistence check therefore does not apply; SKIP it rather than flag AMBER,
+    which would imply an unverified-but-expected backing that does not exist."""
+    return {"name": "persistence", "status": "SKIP",
+            "reason": "v0.1 is a stateless library — no persistence layer (N/A)",
+            "evidence": {"version": "v0.1", "stateless": True}}
 
 
 def check_customer_surface(timeout: int, repo_root: Path) -> dict:
