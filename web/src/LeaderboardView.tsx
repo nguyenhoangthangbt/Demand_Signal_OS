@@ -181,7 +181,18 @@ export default function LeaderboardView() {
 
   function authHeaders(json = false): Record<string, string> {
     const h: Record<string, string> = {};
-    if (apiKey.trim()) h["X-API-Key"] = apiKey.trim();
+    const key = apiKey.trim();
+    if (key) {
+      // Cross-engine SSO: a `mao_live_*` Enterprise tier-key authenticates via
+      // platform_auth, which expects `Authorization: Bearer` — sending it as
+      // `X-API-Key` 401s (mirrors O2C's frontend/src/api/auth.ts fix). Any other
+      // key kind (e.g. dso_live_* demo keys) stays on `X-API-Key` as before.
+      if (key.startsWith("mao_live_")) {
+        h["Authorization"] = `Bearer ${key}`;
+      } else {
+        h["X-API-Key"] = key;
+      }
+    }
     if (json) h["Content-Type"] = "application/json";
     return h;
   }
@@ -216,7 +227,7 @@ export default function LeaderboardView() {
           seed: 42,
         }),
       });
-      if (submit.status === 401) throw new Error("Tier key rejected (401). Check your X-API-Key.");
+      if (submit.status === 401) throw new Error("Tier key rejected (401). Check your tier key.");
       if (!submit.ok) throw new Error(`Submit failed: ${submit.status}`);
       const { run_id } = await submit.json();
       setRunId(run_id);
