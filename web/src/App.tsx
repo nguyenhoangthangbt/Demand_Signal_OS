@@ -13,6 +13,7 @@
 import { useEffect, useState } from "react";
 import LeaderboardView from "./LeaderboardView";
 import VerifyView from "./VerifyView";
+import { writeSsoCookie, clearSsoCookie } from "./sso";
 
 const API_BASE = "https://plan2cash-api.sim-os.ai";
 // DSO's own API (leaderboard + the v0.2 single-series forecast). Same base the
@@ -100,7 +101,15 @@ export default function App() {
   const isLeaderboard = hash === "#leaderboard";
 
   useEffect(() => {
-    if (token) localStorage.setItem(TOKEN_KEY, token);
+    if (token) {
+      localStorage.setItem(TOKEN_KEY, token);
+      // Mirror into the parent-domain cookie so sibling *.sim-os.ai engines
+      // auto-authenticate with the same key.
+      writeSsoCookie(token);
+    } else {
+      // Empty token (signed out / never set): drop the shared cookie too.
+      clearSsoCookie();
+    }
   }, [token]);
 
   return (
@@ -117,6 +126,9 @@ export default function App() {
         token={token}
         onSignOut={() => {
           localStorage.removeItem(TOKEN_KEY);
+          // Clear the shared cross-subdomain cookie so a sign-out here doesn't
+          // leave sibling engines silently authenticated.
+          clearSsoCookie();
           setToken("");
           setDraftToken("");
         }}
