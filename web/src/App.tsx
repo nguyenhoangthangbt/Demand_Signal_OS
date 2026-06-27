@@ -123,19 +123,8 @@ export default function App() {
           'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
       }}
     >
-      <Header
-        token={token}
-        onSignOut={() => {
-          localStorage.removeItem(TOKEN_KEY);
-          // Clear the shared cross-subdomain cookie so a sign-out here doesn't
-          // leave sibling engines silently authenticated.
-          clearSsoCookie();
-          setToken("");
-          setDraftToken("");
-        }}
-      />
-      {/* Cross-engine top nav — hop platforms from any page. Plan2Cash-first;
-          access is gated per-tier by each engine (ops_schemas tier_access). */}
+      {/* Bar 1 — cross-engine nav (top of every page). Plan2Cash-first; access
+          is gated per-tier by each engine (ops_schemas tier_access). */}
       <nav
         style={{
           display: "flex",
@@ -168,10 +157,20 @@ export default function App() {
             <span key={label} style={{ color: PALETTE.text, fontWeight: 600 }}>{label}</span>
           )
         )}
-        {/* Right-aligned identity chip — confirms which account/key + tier is
-            active. Renders nothing until the token resolves to a named profile. */}
-        <IdentityBadge token={token} />
       </nav>
+      {/* Bar 2 — engine brand + functional nav + account/utility (Pricing,
+          Account, Sign out, identity badge). */}
+      <Header
+        token={token}
+        onSignOut={() => {
+          localStorage.removeItem(TOKEN_KEY);
+          // Global sign-out: clear the shared .sim-os.ai cookie so signing out
+          // here signs the user out of every engine (mirrors login-once).
+          clearSsoCookie();
+          setToken("");
+          setDraftToken("");
+        }}
+      />
       {isVerify ? (
         <VerifyView />
       ) : isLeaderboard ? (
@@ -206,7 +205,9 @@ function Header({ token, onSignOut }: { token: string; onSignOut: () => void }) 
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
+        flexWrap: "wrap",
         gap: 8,
+        rowGap: "0.4rem",
         padding: isMobile ? "0.6rem 1rem" : "0.75rem 1.5rem",
         borderBottom: `1px solid ${PALETTE.border}`,
         backgroundColor: PALETTE.bgPanel,
@@ -236,6 +237,20 @@ function Header({ token, onSignOut }: { token: string; onSignOut: () => void }) 
         >
           Verify
         </a>
+        <a
+          href="https://sim-os.ai/pricing"
+          style={{ color: PALETTE.link, fontSize: isMobile ? "0.75rem" : "0.8rem", textDecoration: "none" }}
+        >
+          Pricing
+        </a>
+        {token && (
+          <a
+            href="https://sim-os.ai/account"
+            style={{ color: PALETTE.link, fontSize: isMobile ? "0.75rem" : "0.8rem", textDecoration: "none" }}
+          >
+            Account
+          </a>
+        )}
         {token && (
           <button
             onClick={onSignOut}
@@ -252,6 +267,7 @@ function Header({ token, onSignOut }: { token: string; onSignOut: () => void }) 
             Sign out
           </button>
         )}
+        <IdentityBadge token={token} />
       </nav>
     </header>
   );
@@ -1532,26 +1548,7 @@ function Footer() {
         fontSize: "0.75rem",
       }}
     >
-      <div style={{ marginBottom: "0.75rem" }}>
-        <span style={{ textTransform: "uppercase", letterSpacing: "0.06em", color: PALETTE.textDim, marginRight: "0.5rem" }}>
-          Engines:
-        </span>
-        {([
-          ["Plan2Cash", "https://plan2cash.sim-os.ai"],
-          ["PlanningOS", "https://planning.sim-os.ai"],
-          ["DemandSignalOS", "https://demand-signal.sim-os.ai"],
-          ["SimOS", "https://supplychain.sim-os.ai"],
-          ["Order2Cash", "https://o2c.sim-os.ai"],
-          ["AI Agents", "https://agents.sim-os.ai"],
-        ] as [string, string][]).map(([label, href], i) => (
-          <span key={href}>
-            {i > 0 ? " · " : ""}
-            <a href={href} style={{ color: PALETTE.link, textDecoration: "none" }}>
-              {label}
-            </a>
-          </span>
-        ))}
-      </div>
+      {/* Footer engines list removed — Bar 1 (top) is the canonical engine nav. */}
       DemandSignalOS · included in SimOS{" "}
       <a href="https://sim-os.ai/pricing" style={{ color: PALETTE.link, textDecoration: "none" }}>
         Premium
