@@ -121,6 +121,40 @@ export default function App() {
           setDraftToken("");
         }}
       />
+      {/* Cross-engine top nav — hop platforms from any page. Plan2Cash-first;
+          access is gated per-tier by each engine (ops_schemas tier_access). */}
+      <nav
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          alignItems: "center",
+          gap: "0.25rem 1rem",
+          padding: "0.35rem 1.5rem",
+          borderBottom: `1px solid ${PALETTE.border}`,
+          backgroundColor: PALETTE.bgPanel,
+          fontSize: "0.75rem",
+        }}
+      >
+        <span style={{ color: PALETTE.textFaint, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+          Engines
+        </span>
+        {([
+          ["Plan2Cash", "https://plan2cash.sim-os.ai"],
+          ["PlanningOS", "https://planning.sim-os.ai"],
+          ["DemandSignalOS", null],
+          ["SimOS", "https://supplychain.sim-os.ai"],
+          ["Order2Cash", "https://o2c.sim-os.ai"],
+          ["AI Agents", "https://agents.sim-os.ai"],
+        ] as [string, string | null][]).map(([label, href]) =>
+          href ? (
+            <a key={label} href={href} style={{ color: PALETTE.link, textDecoration: "none" }}>
+              {label}
+            </a>
+          ) : (
+            <span key={label} style={{ color: PALETTE.text, fontWeight: 600 }}>{label}</span>
+          )
+        )}
+      </nav>
       {isVerify ? (
         <VerifyView />
       ) : isLeaderboard ? (
