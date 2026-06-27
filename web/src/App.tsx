@@ -1493,11 +1493,11 @@ function Footer() {
           Engines:
         </span>
         {([
-          ["SimOS", "https://supplychain.sim-os.ai"],
+          ["Plan2Cash", "https://plan2cash.sim-os.ai"],
           ["PlanningOS", "https://planning.sim-os.ai"],
           ["DemandSignalOS", "https://demand-signal.sim-os.ai"],
+          ["SimOS", "https://supplychain.sim-os.ai"],
           ["Order2Cash", "https://o2c.sim-os.ai"],
-          ["Plan2Cash", "https://plan2cash.sim-os.ai"],
           ["AI Agents", "https://agents.sim-os.ai"],
         ] as [string, string][]).map(([label, href], i) => (
           <span key={href}>
