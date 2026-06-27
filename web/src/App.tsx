@@ -174,7 +174,7 @@ export default function App() {
       {isVerify ? (
         <VerifyView />
       ) : isLeaderboard ? (
-        <LeaderboardView />
+        <LeaderboardView token={token} />
       ) : (
         <>
           <Hero />
