@@ -219,13 +219,6 @@ function Header({ token, onSignOut }: { token: string; onSignOut: () => void }) 
         >
           Verify
         </a>
-        {/* Plan2Cash cross-link — full label on desktop, just the arrow + initials on mobile. */}
-        <a
-          href="https://plan2cash.sim-os.ai"
-          style={{ color: PALETTE.link, fontSize: isMobile ? "0.75rem" : "0.8rem", textDecoration: "none" }}
-        >
-          {isMobile ? "↗ P2C" : "↗ Plan2Cash"}
-        </a>
         {token && (
           <button
             onClick={onSignOut}
