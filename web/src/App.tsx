@@ -139,7 +139,8 @@ export default function App() {
       <nav
         style={{
           display: "flex",
-          flexWrap: "wrap",
+          flexWrap: "nowrap",
+          overflowX: "auto",
           alignItems: "center",
           gap: "0.25rem 1rem",
           padding: "0.35rem 1.5rem",
@@ -174,7 +175,7 @@ export default function App() {
       {isVerify ? (
         <VerifyView />
       ) : isLeaderboard ? (
-        <LeaderboardView />
+        <LeaderboardView token={token} />
       ) : (
         <>
           <Hero />

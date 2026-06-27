@@ -10,10 +10,17 @@
 // Inline-styled to match App.tsx PALETTE. Hits the DSO leaderboard API
 // (VITE_DSO_API_BASE ?? "/api/v1"); tier key via X-API-Key.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import PremiumGate from "./PremiumGate";
 
 const API_BASE: string =
   (import.meta.env.VITE_DSO_API_BASE as string | undefined) ?? "/api/v1";
+
+// Tiers the leaderboard is included with. Everything else (free / pro / null)
+// is gated. The DSO leaderboard API enforces this server-side (require_dso_access
+// >= PREMIUM → 403); this set drives the pre-gate so a sub-Premium key sees the
+// gate instead of a runnable form that would only fail at submit.
+const ENTITLED_TIERS = new Set(["premium", "enterprise", "internal"]);
 
 const PALETTE = {
   bg: "#0f172a",
@@ -141,7 +148,58 @@ function parseHistory(raw: string): number[] {
     .filter((n) => Number.isFinite(n));
 }
 
-export default function LeaderboardView() {
+export default function LeaderboardView({ token = "" }: { token?: string }) {
+  // Pre-gate state. The handed-off SSO key (App-level `token`) decides whether
+  // this workbench renders. "open" = show the form; "gated" = show PremiumGate;
+  // "checking" = whoami in flight. Fail-soft: default OPEN and only flip to
+  // "gated" when whoami CLEARLY returns a sub-Premium tier, so a slow/erroring
+  // whoami never locks out a legitimately-entitled user (the API still 403s on
+  // Run, so erring open on the UI is safe).
+  const [access, setAccess] = useState<"open" | "checking" | "gated">(
+    token ? "checking" : "open",
+  );
+  const [gatedTier, setGatedTier] = useState<string | null>(null);
+
+  useEffect(() => {
+    // No handed-off key → leave the form public exactly as before (the form has
+    // its own inline tier-key field). Only a present token triggers the check.
+    if (!token) {
+      setAccess("open");
+      setGatedTier(null);
+      return;
+    }
+    setAccess("checking");
+    const ctrl = new AbortController();
+    // Fail-soft timeout: if whoami stalls, err OPEN rather than spin forever.
+    const timer = window.setTimeout(() => ctrl.abort(), 6000);
+    fetch(`${API_BASE}/account/whoami`, {
+      headers: { "X-API-Key": token },
+      signal: ctrl.signal,
+    })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((d: { tier?: string | null }) => {
+        const tier = (d.tier ?? "").toLowerCase();
+        if (tier && !ENTITLED_TIERS.has(tier)) {
+          setGatedTier(d.tier ?? null);
+          setAccess("gated");
+        } else {
+          // Entitled tier, or an all-null fail-soft response → show the form.
+          setAccess("open");
+          setGatedTier(null);
+        }
+      })
+      .catch(() => {
+        // whoami errored / timed out → never lock out; show the form.
+        setAccess("open");
+        setGatedTier(null);
+      })
+      .finally(() => window.clearTimeout(timer));
+    return () => {
+      window.clearTimeout(timer);
+      ctrl.abort();
+    };
+  }, [token]);
+
   const [apiKey, setApiKey] = useState("");
   const [historyRaw, setHistoryRaw] = useState(SAMPLE_HISTORY);
   const [horizon, setHorizon] = useState(4);
@@ -267,6 +325,21 @@ export default function LeaderboardView() {
     } catch (e) {
       setError((e as Error).message);
     }
+  }
+
+  // Sub-Premium handed-off key → clean pre-gate instead of the runnable form.
+  if (access === "gated") {
+    return <PremiumGate tier={gatedTier} />;
+  }
+
+  // whoami in flight → a quiet placeholder so a sub-Premium user doesn't see the
+  // full form flash before the gate resolves. Resolves to "open"/"gated" fast.
+  if (access === "checking") {
+    return (
+      <section style={{ padding: "2.5rem 1.5rem", maxWidth: 920, margin: "0 auto" }}>
+        <p style={{ color: PALETTE.textDim, fontSize: "0.85rem" }}>Checking access…</p>
+      </section>
+    );
   }
 
   return (
