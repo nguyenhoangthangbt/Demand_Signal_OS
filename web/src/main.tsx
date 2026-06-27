@@ -23,11 +23,16 @@ try {
       window.location.pathname + (q ? `?${q}` : "") + window.location.hash,
     );
   }
-  if (!key) key = localStorage.getItem("dso_token_v1") ?? "";
+  // Cookie is AUTHORITATIVE for the cross-engine session: resolve ?key= then the
+  // shared cookie — NOT the stale per-origin cache. If neither is present, any
+  // leftover localStorage token is from a session signed out elsewhere (the
+  // cookie was cleared), so drop it — this makes sign-out truly global.
   if (!key) key = readSsoCookie();
   if (key) {
     localStorage.setItem("dso_token_v1", key);
     writeSsoCookie(key);
+  } else {
+    localStorage.removeItem("dso_token_v1");
   }
 } catch {
   /* SSO resolve is best-effort; the SPA still loads */
