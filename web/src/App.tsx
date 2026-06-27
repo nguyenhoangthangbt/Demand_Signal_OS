@@ -13,6 +13,7 @@
 import { useEffect, useState } from "react";
 import LeaderboardView from "./LeaderboardView";
 import VerifyView from "./VerifyView";
+import IdentityBadge from "./IdentityBadge";
 import { writeSsoCookie, clearSsoCookie } from "./sso";
 
 const API_BASE = "https://plan2cash-api.sim-os.ai";
@@ -166,6 +167,9 @@ export default function App() {
             <span key={label} style={{ color: PALETTE.text, fontWeight: 600 }}>{label}</span>
           )
         )}
+        {/* Right-aligned identity chip — confirms which account/key + tier is
+            active. Renders nothing until the token resolves to a named profile. */}
+        <IdentityBadge token={token} />
       </nav>
       {isVerify ? (
         <VerifyView />
