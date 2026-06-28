@@ -12,6 +12,7 @@
 
 import { useEffect, useState } from "react";
 import PremiumGate from "./PremiumGate";
+import { readSsoCookie } from "./sso";
 
 const API_BASE: string =
   (import.meta.env.VITE_DSO_API_BASE as string | undefined) ?? "/api/v1";
@@ -65,9 +66,9 @@ interface LeaderboardResult {
   content_hash: string;
 }
 
-// 3-decimal format; em-dash for null/NaN (smape can be NaN; benchmarks may lack it).
+// 3-decimal format; "n/a" for null/NaN (smape can be NaN; benchmarks may lack it).
 const fmt3 = (v: number | null | undefined): string =>
-  v == null || Number.isNaN(v) ? "—" : v.toFixed(3);
+  v == null || Number.isNaN(v) ? "n/a" : v.toFixed(3);
 
 const SAMPLE_HISTORY = Array.from({ length: 48 }, (_, i) =>
   Math.round(10 + 3 * Math.sin((2 * Math.PI * i) / 7) + (i % 3)),
@@ -117,7 +118,7 @@ interface GoldenPreset {
 const GOLDEN_PRESETS: GoldenPreset[] = [
   {
     key: "FACE-CRM",
-    label: "Beauty CPG — FACE-CRM (face cream, Q4 peak)",
+    label: "Beauty CPG:FACE-CRM (face cream, Q4 peak)",
     series: GOLDEN_FACE_CRM,
     horizon: 4,
     seasonLength: 13,
@@ -127,7 +128,7 @@ const GOLDEN_PRESETS: GoldenPreset[] = [
   },
   {
     key: "SERUM-30",
-    label: "Beauty CPG — SERUM-30 (serum, Q4 peak)",
+    label: "Beauty CPG:SERUM-30 (serum, Q4 peak)",
     series: GOLDEN_SERUM_30,
     horizon: 4,
     seasonLength: 13,
@@ -137,7 +138,7 @@ const GOLDEN_PRESETS: GoldenPreset[] = [
   },
   {
     key: "SHMP-400",
-    label: "Beauty CPG — SHMP-400 (shampoo, Q4 peak)",
+    label: "Beauty CPG:SHMP-400 (shampoo, Q4 peak)",
     series: GOLDEN_SHMP_400,
     horizon: 4,
     seasonLength: 13,
@@ -208,7 +209,19 @@ export default function LeaderboardView({ token = "" }: { token?: string }) {
     };
   }, [token]);
 
-  const [apiKey, setApiKey] = useState("");
+  // W-08: prefill from the signed-in session (App token, else the shared
+  // mao_sso cookie) so a signed-in user never has to re-paste a key. The
+  // dual-accept gate (require_dso_access) takes a mao_live_ Bearer OR a
+  // dso_live_ X-API-Key; authHeaders() routes by prefix.
+  const [apiKey, setApiKey] = useState<string>(() => token || readSsoCookie());
+  useEffect(() => {
+    // Adopt the handed-off session key if the field is still empty.
+    if (!apiKey.trim()) {
+      const session = token || readSsoCookie();
+      if (session) setApiKey(session);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
   const [historyRaw, setHistoryRaw] = useState(SAMPLE_HISTORY);
   const [horizon, setHorizon] = useState(4);
   const [seasonLength, setSeasonLength] = useState(7);
@@ -268,6 +281,16 @@ export default function LeaderboardView({ token = "" }: { token?: string }) {
     setError("");
     setResult(null);
     setReceipt(null);
+    // W-07: never a silent no-op — require a key (or sign-in) and say so.
+    const key = apiKey.trim();
+    if (!key) {
+      setError(
+        "Enter your tier-key to run the leaderboard: sign in to the engine mesh, " +
+          "or paste a mao_live_ / dso_live_ key above.",
+      );
+      setStatus("failed");
+      return;
+    }
     const history = parseHistory(historyRaw);
     if (history.length < seasonLength + horizon) {
       setError(`Need at least ${seasonLength + horizon} data points; got ${history.length}.`);
@@ -357,23 +380,37 @@ export default function LeaderboardView({ token = "" }: { token?: string }) {
       </h2>
       <p style={{ marginTop: 8, fontSize: "0.9rem", color: PALETTE.textDim, lineHeight: 1.6, maxWidth: 700 }}>
         Run every registered forecaster on your demand history and rank them{" "}
-        <strong style={{ color: PALETTE.textMuted }}>probabilistically</strong> — by CRPS and
+        <strong style={{ color: PALETTE.textMuted }}>probabilistically</strong>, by CRPS and
         interval coverage, not point error. Each candidate is gated against the naive
         benchmarks: a model can rank #1 and still be flagged{" "}
         <em>"doesn't beat naive."</em> The winner ships a bundle-ready forecast into
         PlanningOS / SimOS / O2C.
       </p>
+      <p style={{ marginTop: 6, fontSize: "0.78rem", color: PALETTE.textFaint, lineHeight: 1.6, maxWidth: 700 }}>
+        <strong style={{ color: PALETTE.textDim }}>CRPS</strong>: probabilistic accuracy of the
+        whole forecast distribution (lower is better).{" "}
+        <strong style={{ color: PALETTE.textDim }}>Coverage</strong>: how often the actual fell
+        inside the predicted band (a 90% band should contain about 90%).{" "}
+        <strong style={{ color: PALETTE.textDim }}>Beats naive</strong>: whether the model improved
+        on a simple seasonal-naive baseline. Full definitions in the{" "}
+        <a href="https://edu.sim-os.ai/glossary" style={{ color: PALETTE.link }}>glossary</a>.
+      </p>
 
       {/* Config panel */}
       <div style={panelStyle}>
-        <label style={labelStyle}>Tier key (X-API-Key)</label>
+        <label style={labelStyle}>Tier key (auto-filled from your sign-in)</label>
         <input
           type="password"
-          placeholder="dso_live_… (leave blank in local dev)"
+          placeholder="mao_live_… or dso_live_…"
           value={apiKey}
           onChange={(e) => setApiKey(e.target.value)}
           style={inputStyle}
         />
+        <p style={{ margin: "4px 0 0 0", fontSize: "0.7rem", color: PALETTE.textFaint }}>
+          {apiKey.trim()
+            ? "Using your signed-in tier-key (a mao_live_ key via SSO, or a dso_live_ demo key)."
+            : "Required on the live API. Sign in to the engine mesh, or paste a mao_live_ / dso_live_ key."}
+        </p>
 
         <div style={{ marginTop: 12 }}>
           <label style={labelStyle}>Load golden example (Beauty CPG)</label>
@@ -394,7 +431,7 @@ export default function LeaderboardView({ token = "" }: { token?: string }) {
           </select>
           <p style={{ margin: "4px 0 0 0", fontSize: "0.7rem", color: PALETTE.textFaint }}>
             One click loads a 52-week weekly series + sensible knobs (horizon 4,
-            season 13, full panel) — then press Run leaderboard.
+            season 13, full panel), then press Run leaderboard.
           </p>
         </div>
 
@@ -411,15 +448,19 @@ export default function LeaderboardView({ token = "" }: { token?: string }) {
         </p>
 
         <div style={{ display: "flex", flexWrap: "wrap", gap: 16, marginTop: 14 }}>
-          <Knob label="Horizon" value={horizon} setValue={setHorizon} min={1} />
-          <Knob label="Season length" value={seasonLength} setValue={setSeasonLength} min={1} />
-          <Knob label="Backtest windows" value={nWindows} setValue={setNWindows} min={1} />
+          <Knob label="Horizon" value={horizon} setValue={setHorizon} min={1}
+            title="How many future periods to forecast and score." />
+          <Knob label="Season length" value={seasonLength} setValue={setSeasonLength} min={1}
+            title="The repeating cycle length (e.g. 7 for a weekly pattern in daily data, 12 for monthly)." />
+          <Knob label="Backtest windows" value={nWindows} setValue={setNWindows} min={1}
+            title="How many walk-forward test windows to average each score over." />
           <div>
             <label style={labelStyle}>Intermittent</label>
             <select
               value={intermittent}
               onChange={(e) => setIntermittent(e.target.value as "auto" | "on" | "off")}
               style={{ ...inputStyle, width: 110 }}
+              title="For sparse / zero-heavy demand: 'on' uses intermittent methods (Croston/TSB/SBA)."
             >
               <option value="auto">auto</option>
               <option value="on">on</option>
@@ -467,7 +508,7 @@ export default function LeaderboardView({ token = "" }: { token?: string }) {
         {status === "running" && (
           <p style={{ margin: "8px 0 0 0", fontSize: "0.78rem", color: PALETTE.textDim }}>
             Fitting every method through walk-forward backtest (GBM trains 7 quantile
-            models per window — this can take a minute).
+            models per window, so this can take a minute).
           </p>
         )}
         {error && (
@@ -518,13 +559,13 @@ function Results({
           <p style={{ margin: 0, color: PALETTE.error, fontSize: "0.9rem" }}>
             ⚠ No forecaster beat the naive benchmarks. Recommending the safest baseline:{" "}
             <strong>{result.winner_method_id}</strong>. Your series may be too short or too
-            noisy for a model to add value — that's an honest answer, not a failure.
+            noisy for a model to add value. That's an honest answer, not a failure.
           </p>
         ) : (
           <p style={{ margin: 0, color: PALETTE.ok, fontSize: "0.95rem" }}>
-            ✓ Winner: <strong>{result.winner_method_id}</strong> — beats all naive benchmarks
+            ✓ Winner: <strong>{result.winner_method_id}</strong>, beats all naive benchmarks
             (CRPS {winnerEntry?.crps.toFixed(3)}, 90% coverage{" "}
-            {winnerEntry?.coverage_90 != null ? `${(winnerEntry.coverage_90 * 100).toFixed(0)}%` : "—"}).
+            {winnerEntry?.coverage_90 != null ? `${(winnerEntry.coverage_90 * 100).toFixed(0)}%` : "n/a"}).
           </p>
         )}
       </div>
@@ -569,10 +610,10 @@ function Results({
                 <td style={tdStyle}>{fmt3(e.pinball_q90)}</td>
                 <td style={tdStyle}>{fmt3(e.wis)}</td>
                 <td style={tdStyle}>
-                  {e.coverage_50 != null ? `${(e.coverage_50 * 100).toFixed(0)}%` : "—"}
+                  {e.coverage_50 != null ? `${(e.coverage_50 * 100).toFixed(0)}%` : "n/a"}
                 </td>
                 <td style={tdStyle}>
-                  {e.coverage_90 != null ? `${(e.coverage_90 * 100).toFixed(0)}%` : "—"}
+                  {e.coverage_90 != null ? `${(e.coverage_90 * 100).toFixed(0)}%` : "n/a"}
                 </td>
                 <td style={tdStyle}>
                   {e.is_benchmark ? (
@@ -640,14 +681,16 @@ function Knob({
   value,
   setValue,
   min,
+  title,
 }: {
   label: string;
   value: number;
   setValue: (n: number) => void;
   min: number;
+  title?: string;
 }) {
   return (
-    <div>
+    <div title={title}>
       <label style={labelStyle}>{label}</label>
       <input
         type="number"
