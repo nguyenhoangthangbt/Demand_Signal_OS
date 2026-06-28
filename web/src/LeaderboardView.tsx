@@ -48,6 +48,10 @@ interface LeaderboardEntry {
   rank: number;
   is_benchmark: boolean;
   crps: number;
+  smape: number | null;
+  pinball_q50: number;
+  pinball_q90: number;
+  wis: number;
   coverage_50: number | null;
   coverage_90: number | null;
   beats_all_benchmarks: boolean | null;
@@ -60,6 +64,10 @@ interface LeaderboardResult {
   n_methods: number;
   content_hash: string;
 }
+
+// 3-decimal format; em-dash for null/NaN (smape can be NaN; benchmarks may lack it).
+const fmt3 = (v: number | null | undefined): string =>
+  v == null || Number.isNaN(v) ? "—" : v.toFixed(3);
 
 const SAMPLE_HISTORY = Array.from({ length: 48 }, (_, i) =>
   Math.round(10 + 3 * Math.sin((2 * Math.PI * i) / 7) + (i % 3)),
@@ -528,6 +536,10 @@ function Results({
             <th style={thStyle}>#</th>
             <th style={thStyle}>Method</th>
             <th style={thStyle}>CRPS ↓</th>
+            <th style={thStyle}>sMAPE ↓</th>
+            <th style={thStyle}>Pinball q50 ↓</th>
+            <th style={thStyle}>Pinball q90 ↓</th>
+            <th style={thStyle}>WIS ↓</th>
             <th style={thStyle}>50% cov</th>
             <th style={thStyle}>90% cov</th>
             <th style={thStyle}>Trust</th>
@@ -552,6 +564,10 @@ function Results({
                   )}
                 </td>
                 <td style={tdStyle}>{e.crps.toFixed(3)}</td>
+                <td style={tdStyle}>{fmt3(e.smape)}</td>
+                <td style={tdStyle}>{fmt3(e.pinball_q50)}</td>
+                <td style={tdStyle}>{fmt3(e.pinball_q90)}</td>
+                <td style={tdStyle}>{fmt3(e.wis)}</td>
                 <td style={tdStyle}>
                   {e.coverage_50 != null ? `${(e.coverage_50 * 100).toFixed(0)}%` : "—"}
                 </td>
