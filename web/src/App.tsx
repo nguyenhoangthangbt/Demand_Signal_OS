@@ -1235,6 +1235,34 @@ function ForecastPreview({ series }: { series?: number[] | null }) {
     return (i === 0 ? "M" : "L") + x + " " + y;
   }).join(" ");
 
+  // Export the live forecast (q05/q50/q95 per horizon) plus the history it was
+  // computed from, as CSV — so users can take the actual forecasted NUMBERS
+  // away, not just read them off the chart.
+  const downloadForecastCsv = () => {
+    const rows: string[][] = [["period", "segment", "observed", "q05", "q50", "q95"]];
+    HISTORY.forEach((v, i) => rows.push([String(i + 1), "history", String(v), "", "", ""]));
+    FORECAST.forEach((f, i) =>
+      rows.push([
+        String(HISTORY.length + i + 1),
+        "forecast",
+        "",
+        String(f.q05),
+        String(f.q50),
+        String(f.q95),
+      ]),
+    );
+    const csv = rows.map((r) => r.join(",")).join("\r\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "dso_forecast.csv";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <section style={{ padding: "0 1.5rem 1.25rem", maxWidth: 900, margin: "0 auto" }}>
       <h3 style={{ fontSize: "1.1rem", marginBottom: 6 }}>
@@ -1298,6 +1326,25 @@ function ForecastPreview({ series }: { series?: number[] | null }) {
           }}
         >
           {busy ? "Forecasting…" : "▶ Forecast this series"}
+        </button>
+        <button
+          onClick={downloadForecastCsv}
+          disabled={FORECAST.length === 0}
+          title="Download the forecast (q05/q50/q95 per period) plus the history, as CSV"
+          style={{
+            padding: "8px 14px",
+            fontSize: "0.8rem",
+            fontWeight: 600,
+            color: PALETTE.text,
+            backgroundColor: "transparent",
+            border: `1px solid ${PALETTE.border}`,
+            borderRadius: 6,
+            cursor: FORECAST.length === 0 ? "not-allowed" : "pointer",
+            opacity: FORECAST.length === 0 ? 0.5 : 1,
+            whiteSpace: "nowrap",
+          }}
+        >
+          ⬇ Download CSV
         </button>
       </div>
       {err && (
