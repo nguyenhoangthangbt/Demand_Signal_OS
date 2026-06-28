@@ -27,7 +27,13 @@ def _run_curl(url: str, timeout: int) -> tuple[int, str]:
         proc = subprocess.run(
             ["curl", "-s", "-L", "--compressed", "-w", "\n%{http_code}",
              "-o", "-", "--max-time", str(timeout), url],
-            capture_output=True, text=True, timeout=timeout + 5,
+            capture_output=True, text=True,
+            # Decode as UTF-8 with replacement: the minified JS bundle carries
+            # bytes that the Windows default (cp1252) cannot decode, which would
+            # crash the reader thread and leave stdout=None -> the check raised
+            # AttributeError and went RED despite a healthy product.
+            encoding="utf-8", errors="replace",
+            timeout=timeout + 5,
         )
         body = proc.stdout
         nl = body.rfind("\n")
