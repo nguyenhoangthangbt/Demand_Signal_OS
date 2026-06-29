@@ -22,7 +22,7 @@ PUBLIC_URL = "https://demand-signal.sim-os.ai"
 API_URL = "https://demand-signal-api.sim-os.ai"  # full API live since 2026-06-14
 
 
-def _run_curl(url: str, timeout: int) -> tuple[int, str]:
+def _curl_once(url: str, timeout: int) -> tuple[int, str]:
     try:
         proc = subprocess.run(
             ["curl", "-s", "-L", "--compressed", "-w", "\n%{http_code}",
@@ -42,6 +42,23 @@ def _run_curl(url: str, timeout: int) -> tuple[int, str]:
         return 0, body
     except (subprocess.TimeoutExpired, FileNotFoundError) as e:
         return 0, str(e)
+
+
+def _run_curl(url: str, timeout: int, retries: int = 1) -> tuple[int, str]:
+    # Retry once on a TRANSIENT failure — status 0 (timeout / connection error)
+    # or a 5xx. Under the orchestrator's parallel run (3 pytest suites + live
+    # HTTP probes hammering one host at once), a healthy surface can briefly
+    # time out and flake a check to RED (observed 2026-06-29: customer_surface
+    # RED in parallel, GREEN standalone). One retry removes that false-RED
+    # WITHOUT masking a real outage: a persistent 0/5xx still returns after the
+    # retry, so the check stays RED. Real codes (200/401/...) return immediately.
+    code, body = _curl_once(url, timeout)
+    for _ in range(max(0, retries)):
+        if code != 0 and not (500 <= code < 600):
+            break
+        time.sleep(1.5)
+        code, body = _curl_once(url, timeout)
+    return code, body
 
 
 def _git_sha(repo_root: Path) -> str | None:
