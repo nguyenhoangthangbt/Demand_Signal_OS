@@ -134,7 +134,7 @@ export default function VerifyView() {
           maxWidth: 680,
         }}
       >
-        Every DemandSignalOS forecast ships a signed trust receipt — interval
+        Every DemandSignalOS forecast ships a signed trust receipt - interval
         coverage, CRPS-vs-baseline, and drift checks you can re-derive yourself.
         Below is a real receipt from an operational (H+4w) run on SKU-4471 @
         DC-EAST. Paste your own receipt to verify it, or download the validation

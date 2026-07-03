@@ -132,8 +132,8 @@ export default function VerifyPanel({
   const seed = receipt.provenance?.seed
 
   const takeaway = allPass
-    ? `All ${rows.length} trust checks passed — you can rely on this ${eng.noun}.`
-    : `${hardFails || failCount} of ${rows.length} checks failed — treat this ${eng.noun} with caution until resolved.`
+    ? `All ${rows.length} trust checks passed - you can rely on this ${eng.noun}.`
+    : `${hardFails || failCount} of ${rows.length} checks failed - treat this ${eng.noun} with caution until resolved.`
 
   return (
     <div style={{
@@ -234,7 +234,7 @@ export default function VerifyPanel({
           Cryptographically signed by the engine ({receipt.signed_by ?? 'unsigned'}, HMAC-SHA256). Any edit to this receipt breaks the seal.
         </div>
         <div style={{ fontSize: 11, color: C.faint, marginTop: 3, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {receipt.signature ? receipt.signature.slice(0, 40) + '…' : '— not signed —'}
+          {receipt.signature ? receipt.signature.slice(0, 40) + '…' : '- not signed -'}
         </div>
         {onDownloadWorkbook && (
           <>
@@ -247,7 +247,7 @@ export default function VerifyPanel({
               </svg>
               Download validation workbook (.xlsx)
             </button>
-            <div style={{ fontSize: 11, color: C.faint, marginTop: 5 }}>Re-derive every check yourself in Excel — live formulas recompute each PASS/FAIL.</div>
+            <div style={{ fontSize: 11, color: C.faint, marginTop: 5 }}>Re-derive every check yourself in Excel - live formulas recompute each PASS/FAIL.</div>
           </>
         )}
       </div>

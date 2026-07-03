@@ -1451,7 +1451,7 @@ function ForecastPreview({ series }: { series?: number[] | null }) {
             >
               {FORECAST[hover - HISTORY.length].q50}
               <tspan fill={PALETTE.textDim} fontSize={8}>
-                {` (${FORECAST[hover - HISTORY.length].q05}–${FORECAST[hover - HISTORY.length].q95})`}
+                {` (${FORECAST[hover - HISTORY.length].q05}-${FORECAST[hover - HISTORY.length].q95})`}
               </tspan>
             </text>
           )}
