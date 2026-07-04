@@ -20,7 +20,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from demand_signal_os.api.auth import require_api_key
+from demand_signal_os.api.auth import require_dso_access
 from demand_signal_os.ops_schemas import ForecastBundle
 
 router = APIRouter(tags=["inventory"])
@@ -41,7 +41,7 @@ class InventoryPolicyRequest(BaseModel):
     carry_quantiles: bool = False
 
 
-@router.post("/inventory/policy", dependencies=[Depends(require_api_key)])
+@router.post("/inventory/policy", dependencies=[Depends(require_dso_access)])
 async def inventory_policy(body: InventoryPolicyRequest) -> dict[str, Any]:
     """Assemble a typed `InventoryPolicy` + `PIR` from a `ForecastBundle`.
 

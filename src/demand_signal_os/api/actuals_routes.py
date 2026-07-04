@@ -23,7 +23,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from demand_signal_os.api.auth import require_api_key
+from demand_signal_os.api.auth import require_dso_access
 from demand_signal_os.ops_schemas import CensoringFlag, DemandActual, ForecastBundle
 
 router = APIRouter(tags=["actuals"])
@@ -54,7 +54,7 @@ class ActualsIngestRequest(BaseModel):
     baseline_crps: float | None = Field(default=None, gt=0)
 
 
-@router.post("/actuals", dependencies=[Depends(require_api_key)])
+@router.post("/actuals", dependencies=[Depends(require_dso_access)])
 async def ingest_actuals(body: ActualsIngestRequest) -> dict[str, Any]:
     """Classify censoring on each actual and (optionally) score the matching forecast."""
     from demand_signal_os.estimation.censoring import (
