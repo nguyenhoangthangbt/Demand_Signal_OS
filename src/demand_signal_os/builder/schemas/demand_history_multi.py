@@ -39,7 +39,7 @@ _SETTINGS_FIELDS: list[FieldSpec] = [
     FieldSpec(
         key="season_length",
         label="Season length (periods)",
-        description="Periods per season — 7 for daily/weekly cycle, 12 for monthly.",
+        description="Periods per season - 7 for daily/weekly cycle, 12 for monthly.",
         cell="F6",
         field_type="int",
         min=2, max=52,
@@ -100,7 +100,7 @@ _SKU_INDEX_COLUMNS: list[TabularColumn] = [
     TabularColumn(
         key="abc_class",
         label="ABC class",
-        description="A / B / C classification — drives downstream safety-stock prioritisation.",
+        description="A / B / C classification - drives downstream safety-stock prioritisation.",
         column="D",
         field_type="enum",
         required=False,
@@ -109,7 +109,7 @@ _SKU_INDEX_COLUMNS: list[TabularColumn] = [
     TabularColumn(
         key="lifecycle_stage",
         label="Lifecycle stage",
-        description="NPI / steady / phase_out — v0.2 hooks lifecycle-aware forecasting (NPI bootstrap + phase-out tail).",
+        description="NPI / steady / phase_out - v0.2 hooks lifecycle-aware forecasting (NPI bootstrap + phase-out tail).",
         column="E",
         field_type="enum",
         required=False,
@@ -202,7 +202,7 @@ DEMAND_HISTORY_MULTI_SCHEMA: WorkbookSpec = WorkbookSpec(
                         "1. Fill Settings (applies to every SKU in this workbook). "
                         "2. Add one row per SKU+location pair on the sku_index tab. "
                         "3. Add observation rows on the observations tab; (sku_id, location_id) must match a sku_index row. "
-                        "4. Upload to plan2cash.sim-os.ai/#/app for validation — every (sku_id, location_id) returns a per-SKU validation report. "
+                        "4. Upload to plan2cash.sim-os.ai/#/app for validation - every (sku_id, location_id) returns a per-SKU validation report. "
                         "5. v0.1.x validates the schema; v0.2 wires per-SKU forecast emission keyed on the identity tuple."
                     ),
                     cell="B3",

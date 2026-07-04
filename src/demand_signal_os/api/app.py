@@ -47,7 +47,7 @@ def create_app() -> Any:
     from demand_signal_os.api.receipt_routes import router as receipt_router
 
     app = FastAPI(
-        title="DemandSignalOS — API",
+        title="DemandSignalOS - API",
         description=(
             "DemandSignalOS surface: public signed forecast-trust receipts "
             "(DECISIONS_LOG §P #65) + auth-gated forecaster leaderboard "

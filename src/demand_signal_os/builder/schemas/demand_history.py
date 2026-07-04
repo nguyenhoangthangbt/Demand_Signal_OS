@@ -55,7 +55,7 @@ _SLOTS_FIELDS: list[FieldSpec] = [
     FieldSpec(
         key="horizon_label",
         label="Forecast horizon",
-        description="Which loop the forecast feeds — operational (daily), tactical (monthly), or strategic (quarterly). Drives the drift threshold (1.5 / 2.0 / 3.0 baseline CRPS).",
+        description="Which loop the forecast feeds - operational (daily), tactical (monthly), or strategic (quarterly). Drives the drift threshold (1.5 / 2.0 / 3.0 baseline CRPS).",
         cell="F7",
         field_type="str",
         default="operational",
@@ -64,7 +64,7 @@ _SLOTS_FIELDS: list[FieldSpec] = [
     FieldSpec(
         key="season_length",
         label="Season length (periods)",
-        description="Periods per season — 7 for daily / weekly cycle; 12 for monthly seasonality.",
+        description="Periods per season - 7 for daily / weekly cycle; 12 for monthly seasonality.",
         cell="F8",
         field_type="int",
         min=2, max=52,
@@ -74,7 +74,7 @@ _SLOTS_FIELDS: list[FieldSpec] = [
     FieldSpec(
         key="baseline_crps",
         label="Baseline CRPS",
-        description="Baseline continuous ranked probability score — drift_magnitude is current CRPS divided by this. Set from a prior calibration window; if unknown leave default.",
+        description="Baseline continuous ranked probability score - drift_magnitude is current CRPS divided by this. Set from a prior calibration window; if unknown leave default.",
         cell="F9",
         field_type="float",
         min=0.0001, max=1000.0,
@@ -84,7 +84,7 @@ _SLOTS_FIELDS: list[FieldSpec] = [
     FieldSpec(
         key="min_quantile_spread",
         label="Min quantile spread (Phase A guard)",
-        description="Floor on the quantile band width — prevents noiseless input from collapsing to a point forecast. Default 5.0 per DSO Phase A band-guard.",
+        description="Floor on the quantile band width - prevents noiseless input from collapsing to a point forecast. Default 5.0 per DSO Phase A band-guard.",
         cell="F10",
         field_type="float",
         min=0.0, max=100.0,
@@ -94,7 +94,7 @@ _SLOTS_FIELDS: list[FieldSpec] = [
     FieldSpec(
         key="seed",
         label="RNG seed",
-        description="Random seed for reproducibility — every ForecastBundle's provenance envelope cites this.",
+        description="Random seed for reproducibility - every ForecastBundle's provenance envelope cites this.",
         cell="F11",
         field_type="int",
         min=0, max=2_147_483_647,
@@ -128,7 +128,7 @@ _HISTORY_COLUMNS: list[TabularColumn] = [
     TabularColumn(
         key="censoring_flag",
         label="Censoring flag",
-        description="One of OBSERVED / REAL_ZERO / STOCKOUT_CENSORED / PARTIAL_CENSORED / UNKNOWN. Stockout-censored is NOT zero demand — DSO treats it as a lower bound.",
+        description="One of OBSERVED / REAL_ZERO / STOCKOUT_CENSORED / PARTIAL_CENSORED / UNKNOWN. Stockout-censored is NOT zero demand - DSO treats it as a lower bound.",
         column="C",
         field_type="enum",
         required=True,
@@ -169,7 +169,7 @@ DEMAND_HISTORY_SCHEMA: WorkbookSpec = WorkbookSpec(
                     description=(
                         "1. Fill Slots first (SKU + location + horizon). "
                         "2. Add historical demand rows on the History tab with a CensoringFlag per row. "
-                        "3. STOCKOUT_CENSORED is NOT zero demand — DSO treats it as a lower bound for censoring-honest estimation. "
+                        "3. STOCKOUT_CENSORED is NOT zero demand - DSO treats it as a lower bound for censoring-honest estimation. "
                         "4. Upload to plan2cash.sim-os.ai/#/app for validation. "
                         "5. After v0.1.5, validated history will run through DSO forecasting (ETS / Croston / TSB / SBA / GBM) and return a quantile-band forecast + drift signal."
                     ),
