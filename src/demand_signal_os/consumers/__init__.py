@@ -6,9 +6,14 @@ v0.1.5 will materialize REST equivalents.
 Adapters:
 - simos_adapter — DemandForecastDistribution wrap + bulk-query interface
 - planning_adapter — aggregated curves for PlanningOS SD (v0.1.5+)
-- o2c_adapter — InventoryPolicy + PIR for Order2Cash_os (v0.1.5+)
+- o2c_adapter — InventoryPolicy + PIR for Order2Cash_os (Wire W4; REST-exposed
+  via ``api/inventory_routes.py``)
 """
 
-from demand_signal_os.consumers import simos_adapter, simos_arrivals_adapter
+from demand_signal_os.consumers import (
+    o2c_adapter,
+    simos_adapter,
+    simos_arrivals_adapter,
+)
 
-__all__ = ["simos_adapter", "simos_arrivals_adapter"]
+__all__ = ["o2c_adapter", "simos_adapter", "simos_arrivals_adapter"]

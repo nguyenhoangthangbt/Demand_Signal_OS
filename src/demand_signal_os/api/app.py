@@ -42,7 +42,9 @@ def create_app() -> Any:
     from fastapi.middleware.cors import CORSMiddleware
 
     from demand_signal_os.api.account_routes import router as account_router
+    from demand_signal_os.api.actuals_routes import router as actuals_router
     from demand_signal_os.api.forecast_routes import router as forecast_router
+    from demand_signal_os.api.inventory_routes import router as inventory_router
     from demand_signal_os.api.leaderboard_routes import router as leaderboard_router
     from demand_signal_os.api.receipt_routes import router as receipt_router
 
@@ -89,5 +91,8 @@ def create_app() -> Any:
     app.include_router(leaderboard_router, prefix="/api/v1")
     app.include_router(forecast_router, prefix="/api/v1")
     app.include_router(account_router, prefix="/api/v1")
+    # W4 (DSO -> O2C policy) + W8 (O2C -> DSO actuals) HTTP surfaces.
+    app.include_router(inventory_router, prefix="/api/v1")
+    app.include_router(actuals_router, prefix="/api/v1")
 
     return app
