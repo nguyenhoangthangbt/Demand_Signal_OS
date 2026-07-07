@@ -148,6 +148,8 @@ export default function App() {
           ["SimOS", "https://supplychain.sim-os.ai"],
           ["Order2Cash", "https://o2c.sim-os.ai"],
           ["AI Agents", "https://agents.sim-os.ai"],
+          ["Guides", "https://guides.sim-os.ai"],
+          ["Academy", "https://academy.sim-os.ai"],
         ] as [string, string | null][]).map(([label, href]) =>
           href ? (
             <a key={label} href={href} style={{ color: PALETTE.link, textDecoration: "none" }}>
