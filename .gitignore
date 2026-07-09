@@ -17,3 +17,13 @@ dist/
 web/node_modules/
 web/dist/
 *.tsbuildinfo
+
+# ── Shared scratch/ephemera baseline (identical block in all 10 repos) ──
+.tmp/
+.temp/
+.scratch/
+.review/
+.uat_*.py
+.smoke_*.py
+.e2e_*.py
+.claude/settings.local.json
