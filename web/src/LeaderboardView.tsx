@@ -358,6 +358,53 @@ export default function LeaderboardView({ token = "" }: { token?: string }) {
     }
   }
 
+  // Native Excel workbook: ranked methods + the winner's per-horizon forecasted
+  // values + reproducibility summary. Gated like the other leaderboard reads,
+  // so it carries the tier key; downloads the blob the API streams back.
+  async function downloadXlsx() {
+    if (!runId) return;
+    try {
+      const r = await fetch(`${API_BASE}/forecast/leaderboard/${runId}/xlsx`, {
+        headers: authHeaders(),
+      });
+      if (!r.ok) throw new Error(`export failed: ${r.status}`);
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `leaderboard_${runId}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  // SimOS arrivals contract: the winning forecast as a SimOS-consumable
+  // arrivals.schedule YAML. Humans audit the .xlsx; SimOS ingests this YAML.
+  async function downloadArrivalsYaml() {
+    if (!runId) return;
+    try {
+      const r = await fetch(`${API_BASE}/forecast/leaderboard/${runId}/arrivals.yaml`, {
+        headers: authHeaders(),
+      });
+      if (!r.ok) throw new Error(`SimOS YAML export failed: ${r.status}`);
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `arrivals_${runId}.yaml`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
   // Sub-Premium handed-off key → clean pre-gate instead of the runnable form.
   if (access === "gated") {
     return <PremiumGate tier={gatedTier} />;
@@ -528,7 +575,15 @@ export default function LeaderboardView({ token = "" }: { token?: string }) {
         )}
       </div>
 
-      {result && <Results result={result} receipt={receipt} onFetchReceipt={fetchReceipt} />}
+      {result && (
+        <Results
+          result={result}
+          receipt={receipt}
+          onFetchReceipt={fetchReceipt}
+          onDownloadXlsx={downloadXlsx}
+          onDownloadYaml={downloadArrivalsYaml}
+        />
+      )}
     </section>
   );
 }
@@ -537,10 +592,14 @@ function Results({
   result,
   receipt,
   onFetchReceipt,
+  onDownloadXlsx,
+  onDownloadYaml,
 }: {
   result: LeaderboardResult;
   receipt: { calibration_id: string; signature: string } | null;
   onFetchReceipt: () => void;
+  onDownloadXlsx: () => void;
+  onDownloadYaml: () => void;
 }) {
   const winnerEntry = result.entries.find((e) => e.method_id === result.winner_method_id);
   return (
@@ -652,6 +711,38 @@ function Results({
           }}
         >
           Get signed receipt
+        </button>
+        <button
+          onClick={onDownloadXlsx}
+          title="Download the leaderboard (ranked methods + the winner's per-horizon forecasted values) as a native Excel workbook"
+          style={{
+            padding: "5px 12px",
+            fontSize: "0.78rem",
+            backgroundColor: "transparent",
+            color: PALETTE.text,
+            border: `1px solid ${PALETTE.border}`,
+            borderRadius: 4,
+            cursor: "pointer",
+            fontWeight: 700,
+          }}
+        >
+          ⬇ Download Excel
+        </button>
+        <button
+          onClick={onDownloadYaml}
+          title="Download the winning forecast as a SimOS arrivals.schedule YAML (the DSO→SimOS contract SimOS consumes directly)"
+          style={{
+            padding: "5px 12px",
+            fontSize: "0.78rem",
+            backgroundColor: "transparent",
+            color: PALETTE.text,
+            border: `1px solid ${PALETTE.border}`,
+            borderRadius: 4,
+            cursor: "pointer",
+            fontWeight: 700,
+          }}
+        >
+          ⬇ SimOS YAML
         </button>
       </div>
       {receipt && (

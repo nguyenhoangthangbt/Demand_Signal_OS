@@ -294,9 +294,41 @@ def check_e2e_baseline(timeout: int, repo_root: Path) -> dict:
             "evidence": {"returncode": proc.returncode, "tail": output}}
 
 
+def check_results_export(timeout: int, repo_root: Path) -> dict:
+    """The forecast results-export .xlsx endpoint must be LIVE.
+
+    POSTs a tiny fixed series to ``/api/v1/forecast/single.xlsx`` and asserts a
+    200 + spreadsheet content-type, proving the deployed API can hand the user
+    their forecast as a native Excel workbook for offline validation. A 404 means
+    the results-export endpoint is not deployed (stale image)."""
+    body = '{"history":[10,12,9,11,13,10,12,11],"horizon":4,"season_length":4}'
+    try:
+        proc = subprocess.run(
+            ["curl", "-s", "-o", "/dev/null", "-w", "%{http_code}\t%{content_type}",
+             "-X", "POST", "-H", "Content-Type: application/json", "-d", body,
+             "--max-time", str(timeout), f"{API_URL}/api/v1/forecast/single.xlsx"],
+            capture_output=True, text=True, timeout=timeout + 5,
+        )
+        code_str, _, ctype = proc.stdout.partition("\t")
+        code = int(code_str) if code_str.strip().isdigit() else 0
+    except Exception as e:
+        return {"name": "results_export", "status": "RED",
+                "reason": f"probe raised: {type(e).__name__}: {e}", "evidence": None}
+    if code == 200 and "spreadsheet" in ctype:
+        return {"name": "results_export", "status": "GREEN",
+                "reason": "forecast .xlsx export live (200 + spreadsheet content-type)",
+                "evidence": {"code": 200, "content_type": ctype}}
+    return {"name": "results_export", "status": "RED",
+            "reason": (f"/forecast/single.xlsx returned HTTP {code} ({ctype or 'no ctype'}) "
+                       "— results-export endpoint missing or not deployed"),
+            "evidence": {"code": code, "content_type": ctype},
+            "reproducer": (f"curl -s -X POST -H 'Content-Type: application/json' "
+                           f"-d '{body}' {API_URL}/api/v1/forecast/single.xlsx")}
+
+
 CHECKS = [check_code_drift, check_container_health, check_api_surface,
           check_persistence, check_customer_surface, check_smoke_test,
-          check_tests, check_e2e_baseline]
+          check_results_export, check_tests, check_e2e_baseline]
 
 
 def main() -> int:

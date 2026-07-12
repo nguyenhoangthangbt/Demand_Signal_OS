@@ -19,7 +19,10 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Any, Literal
 
+import io
+
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 router = APIRouter(tags=["forecast"])
@@ -92,14 +95,10 @@ def _build_config(body: SingleForecastRequest, horizon: int | None = None) -> An
     )
 
 
-@router.post("/forecast/single")
-async def single_forecast(body: SingleForecastRequest) -> dict[str, Any]:
-    """Fit one method on the full history -> a real ``ForecastBundle`` (q05-q95).
-
-    Synchronous (one fit, sub-second). Returns 422 if the series is too short
-    for the method or ``method_id`` is unknown, so the caller gets a clear
-    reason rather than a 500.
-    """
+def _compute_forecast(body: SingleForecastRequest) -> dict[str, Any]:
+    """Fit one method on the full history -> the ``/forecast/single`` response
+    dict (``{"method", "bundle", optional "band", "band_truncated"}``). Raises
+    a clean 422 on any forecaster failure so callers never see a 500."""
     from demand_signal_os.leaderboard import fit_winner_bundle
 
     actuals = _build_actuals(body)
@@ -135,3 +134,62 @@ async def single_forecast(body: SingleForecastRequest) -> dict[str, Any]:
             ),
         ) from exc
     return out
+
+
+@router.post("/forecast/single")
+async def single_forecast(body: SingleForecastRequest) -> dict[str, Any]:
+    """Fit one method on the full history -> a real ``ForecastBundle`` (q05-q95).
+
+    Synchronous (one fit, sub-second). Returns 422 if the series is too short
+    for the method or ``method_id`` is unknown, so the caller gets a clear
+    reason rather than a 500.
+    """
+    return _compute_forecast(body)
+
+
+@router.post("/forecast/single.xlsx")
+async def single_forecast_xlsx(body: SingleForecastRequest) -> StreamingResponse:
+    """The forecast as a native .xlsx workbook (terminal quantiles + per-step
+    widening band + posted history + provenance) — the Excel peer of the CSV
+    download, for offline validation. Forces the band on so the workbook always
+    carries the widening interval the customer validates."""
+    from demand_signal_os.api.forecast_export import forecast_to_xlsx
+
+    body_with_band = body.model_copy(update={"band": True})
+    result = _compute_forecast(body_with_band)
+    xlsx = forecast_to_xlsx(result, body.history)
+    return StreamingResponse(
+        io.BytesIO(xlsx),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=forecast.xlsx"},
+    )
+
+
+@router.post("/forecast/single.yaml")
+async def single_forecast_arrivals_yaml(body: SingleForecastRequest) -> StreamingResponse:
+    """The DSO→SimOS contract for this forecast: a SimOS ``arrivals.schedule``
+    YAML block (one entry per horizon step) that SimOS consumes directly. Humans
+    audit the .xlsx; SimOS ingests this YAML."""
+    from demand_signal_os.api.simos_export import forecast_to_simos_arrivals_yaml
+    from demand_signal_os.leaderboard import fit_winner_bundle, forecast_path
+
+    actuals = _build_actuals(body)
+    cfg = _build_config(body)
+    try:
+        winner_bundle = fit_winner_bundle(actuals, cfg, body.method_id)
+        path = forecast_path(actuals, cfg, body.method_id)
+    except Exception as exc:  # noqa: BLE001 — clean 422, not a 500
+        raise HTTPException(
+            status_code=422,
+            detail=f"forecast failed for method '{body.method_id}': "
+                   f"{type(exc).__name__}: {exc}",
+        ) from exc
+    text = forecast_to_simos_arrivals_yaml(
+        winner_bundle, path,
+        bucket_period=body.bucket_period, start_date=body.start_date,
+    )
+    return StreamingResponse(
+        io.BytesIO(text.encode("utf-8")),
+        media_type="application/x-yaml",
+        headers={"Content-Disposition": "attachment; filename=arrivals.yaml"},
+    )

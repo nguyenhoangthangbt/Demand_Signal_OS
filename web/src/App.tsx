@@ -1265,6 +1265,62 @@ function ForecastPreview({ series }: { series?: number[] | null }) {
     URL.revokeObjectURL(url);
   };
 
+  // Native Excel workbook (terminal quantiles + per-step band + history +
+  // provenance), built server-side by the engine so the numbers stay numeric
+  // and the customer can re-derive every quantile in the tool they audit in.
+  const downloadForecastXlsx = () => {
+    fetch(`${DSO_API}/forecast/single.xlsx`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        history: HISTORY,
+        horizon: 8,
+        season_length: 7,
+        method_id: "ets",
+        band: true,
+      }),
+    })
+      .then((r) => (r.ok ? r.blob() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((blob) => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "dso_forecast.xlsx";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      })
+      .catch((e) => setErr(String(e?.message ?? e)));
+  };
+
+  // SimOS arrivals contract: the same forecast as a SimOS-consumable
+  // arrivals.schedule YAML (humans audit the .xlsx, SimOS ingests this YAML).
+  const downloadForecastYaml = () => {
+    fetch(`${DSO_API}/forecast/single.yaml`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        history: HISTORY,
+        horizon: 8,
+        season_length: 7,
+        method_id: "ets",
+      }),
+    })
+      .then((r) => (r.ok ? r.blob() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((blob) => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "dso_arrivals.yaml";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      })
+      .catch((e) => setErr(String(e?.message ?? e)));
+  };
+
   return (
     <section style={{ padding: "0 1.5rem 1.25rem", maxWidth: 900, margin: "0 auto" }}>
       <h3 style={{ fontSize: "1.1rem", marginBottom: 6 }}>
@@ -1347,6 +1403,44 @@ function ForecastPreview({ series }: { series?: number[] | null }) {
           }}
         >
           ⬇ Download CSV
+        </button>
+        <button
+          onClick={downloadForecastXlsx}
+          disabled={FORECAST.length === 0}
+          title="Download the forecast (quantiles + widening band + history + provenance) as a native Excel workbook"
+          style={{
+            padding: "8px 14px",
+            fontSize: "0.8rem",
+            fontWeight: 600,
+            color: PALETTE.text,
+            backgroundColor: "transparent",
+            border: `1px solid ${PALETTE.border}`,
+            borderRadius: 6,
+            cursor: FORECAST.length === 0 ? "not-allowed" : "pointer",
+            opacity: FORECAST.length === 0 ? 0.5 : 1,
+            whiteSpace: "nowrap",
+          }}
+        >
+          ⬇ Download Excel
+        </button>
+        <button
+          onClick={downloadForecastYaml}
+          disabled={FORECAST.length === 0}
+          title="Download the forecast as a SimOS arrivals.schedule YAML (the DSO→SimOS contract SimOS consumes directly)"
+          style={{
+            padding: "8px 14px",
+            fontSize: "0.8rem",
+            fontWeight: 600,
+            color: PALETTE.text,
+            backgroundColor: "transparent",
+            border: `1px solid ${PALETTE.border}`,
+            borderRadius: 6,
+            cursor: FORECAST.length === 0 ? "not-allowed" : "pointer",
+            opacity: FORECAST.length === 0 ? 0.5 : 1,
+            whiteSpace: "nowrap",
+          }}
+        >
+          ⬇ SimOS YAML
         </button>
       </div>
       {err && (
