@@ -51,50 +51,9 @@ def _horizon_bundles(
     return bundles
 
 
-# The shared list-valued arrivals contract (SimOS "Arrival Schedule" shape).
-# Column keys + sheet name MUST match simulation_os _simos_schema_builder.py so
-# SimOS's excel-builder accepts these rows verbatim (per
-# LIST_VALUED_CONTRACTS_CLOSED_LOOP.md). Kept identical by convention until a
-# shared spec is promoted to excel_io.
-_ARRIVAL_SCHEDULE_SHEET = "Arrival Schedule"
-
-
-def _arrivals_schedule_workbook_spec() -> Any:
-    """The shared arrivals-schedule contract WorkbookSpec: an explicit type
-    declaration (arrivals_distribution=schedule) + the list-valued Arrival
-    Schedule sheet SimOS consumes."""
-    from excel_io import (
-        FieldSpec,
-        SheetSpec,
-        TabularColumn,
-        TabularSheetSpec,
-        WorkbookSpec,
-    )
-
-    return WorkbookSpec(
-        schema_version="1.1",
-        workbook_name="simos_arrivals_schedule",
-        sheets=[
-            SheetSpec(name="Arrivals", fields=[FieldSpec(
-                key="arrivals_distribution",
-                label="Arrival distribution type",
-                description="Declares the arrivals TYPE. This DSO export is a "
-                            "schedule (a list of per-step rates).",
-                cell="F5", field_type="enum",
-                enum_values=["poisson", "schedule"], default="schedule",
-                yaml_path=("arrivals", "distribution"),
-            )]),
-            TabularSheetSpec(name=_ARRIVAL_SCHEDULE_SHEET, max_rows=1000, columns=[
-                TabularColumn(key="time", label="Time (seconds from start)",
-                              column="A", field_type="float", min=0.0, units="seconds"),
-                TabularColumn(key="rate_per_hour", label="Rate (per hour)",
-                              column="B", field_type="float", min=0.0,
-                              units="entities/hour", required=True),
-                TabularColumn(key="noise_std", label="Noise std",
-                              column="C", field_type="float", min=0.0, default=0.0),
-            ]),
-        ],
-    )
+# The shared list-valued arrivals contract lives in excel_io (single source of
+# truth); DSO produces it and SimOS's overlay import consumes the SAME spec.
+from excel_io import ARRIVAL_SCHEDULE_SHEET as _ARRIVAL_SCHEDULE_SHEET  # noqa: E402
 
 
 def forecast_to_simos_arrivals_xlsx(
@@ -108,7 +67,7 @@ def forecast_to_simos_arrivals_xlsx(
     SimOS's excel-builder accepts). Declares ``arrivals_distribution=schedule``
     and fills the Arrival Schedule sheet with one row per horizon step
     ``(time, rate_per_hour, noise_std)`` from the forecast's widening band."""
-    from excel_io import generate_xlsx
+    from excel_io import arrivals_schedule_spec, generate_xlsx
     from demand_signal_os.consumers.simos_arrivals_adapter import (
         forecast_bundles_to_simos_schedule,
     )
@@ -125,7 +84,7 @@ def forecast_to_simos_arrivals_xlsx(
          "noise_std": e.get("noise_std", 0.0)}
         for e in block.get("schedule", [])
     ]
-    spec = _arrivals_schedule_workbook_spec()
+    spec = arrivals_schedule_spec()
     return generate_xlsx(
         spec,
         values={"arrivals_distribution": "schedule"},
