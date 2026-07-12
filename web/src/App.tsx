@@ -1321,6 +1321,33 @@ function ForecastPreview({ series }: { series?: number[] | null }) {
       .catch((e) => setErr(String(e?.message ?? e)));
   };
 
+  // The list-valued arrivals contract as a SimOS-importable xlsx: SimOS's
+  // excel-builder overlay accepts this to overwrite a scenario's arrivals.
+  const downloadForecastSimosXlsx = () => {
+    fetch(`${DSO_API}/forecast/single.simos.xlsx`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        history: HISTORY,
+        horizon: 8,
+        season_length: 7,
+        method_id: "ets",
+      }),
+    })
+      .then((r) => (r.ok ? r.blob() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((blob) => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "dso_simos_arrivals.xlsx";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      })
+      .catch((e) => setErr(String(e?.message ?? e)));
+  };
+
   return (
     <section style={{ padding: "0 1.5rem 1.25rem", maxWidth: 900, margin: "0 auto" }}>
       <h3 style={{ fontSize: "1.1rem", marginBottom: 6 }}>
@@ -1441,6 +1468,25 @@ function ForecastPreview({ series }: { series?: number[] | null }) {
           }}
         >
           ⬇ SimOS YAML
+        </button>
+        <button
+          onClick={downloadForecastSimosXlsx}
+          disabled={FORECAST.length === 0}
+          title="Download the forecast as a SimOS-importable arrivals xlsx (the list-valued contract SimOS's excel-builder overlay accepts)"
+          style={{
+            padding: "8px 14px",
+            fontSize: "0.8rem",
+            fontWeight: 600,
+            color: PALETTE.accentText,
+            backgroundColor: PALETTE.accent,
+            border: "none",
+            borderRadius: 6,
+            cursor: FORECAST.length === 0 ? "not-allowed" : "pointer",
+            opacity: FORECAST.length === 0 ? 0.5 : 1,
+            whiteSpace: "nowrap",
+          }}
+        >
+          ⬇ SimOS arrivals (xlsx)
         </button>
       </div>
       {err && (
