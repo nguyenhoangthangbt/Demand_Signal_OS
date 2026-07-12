@@ -82,6 +82,54 @@ def test_winner_returns_bundle(client: TestClient, completed_run: str) -> None:
     assert bundle["quantiles"]["q05"] <= bundle["quantiles"]["q95"]
 
 
+def test_xlsx_export_has_ranking_and_forecast(client: TestClient, completed_run: str) -> None:
+    import io
+
+    import openpyxl
+
+    resp = client.get(f"/api/v1/forecast/leaderboard/{completed_run}/xlsx")
+    assert resp.status_code == 200, resp.text
+    assert resp.headers["content-type"].startswith(
+        "application/vnd.openxmlformats"
+    )
+    assert "attachment" in resp.headers["content-disposition"]
+    assert resp.content[:2] == b"PK"
+    wb = openpyxl.load_workbook(io.BytesIO(resp.content))
+    # Ranking + the winner's per-horizon forecasted values + summary.
+    assert "Leaderboard" in wb.sheetnames
+    assert "Winner Forecast" in wb.sheetnames
+    wf = wb["Winner Forecast"]
+    assert wf.cell(row=1, column=1).value == "h"
+    # horizon=4 -> 4 per-step rows of real forecasted values.
+    assert wf.max_row == 5  # header + 4 horizons
+
+
+def test_xlsx_export_409_when_not_complete(client: TestClient) -> None:
+    resp = client.get("/api/v1/forecast/leaderboard/lb_missing/xlsx")
+    assert resp.status_code == 404  # unknown run
+
+
+def test_arrivals_yaml_is_simos_consumable(client: TestClient, completed_run: str) -> None:
+    """The DSO→SimOS contract: a sources/arrivals.schedule YAML with one entry
+    per horizon step (rate_per_hour + noise_std), the shape SimOS ingests."""
+    import yaml
+
+    resp = client.get(f"/api/v1/forecast/leaderboard/{completed_run}/arrivals.yaml")
+    assert resp.status_code == 200, resp.text
+    assert "yaml" in resp.headers["content-type"]
+    assert "attachment" in resp.headers["content-disposition"]
+    doc = yaml.safe_load(resp.text)
+    assert "sources" in doc
+    src = doc["sources"][0]
+    assert src["arrivals"]["distribution"] == "schedule"
+    schedule = src["arrivals"]["schedule"]
+    assert len(schedule) == 4  # horizon=4 -> 4 forward schedule entries
+    assert schedule[0]["time"] == 0.0
+    assert all("rate_per_hour" in e for e in schedule)
+    # forward, monotone times.
+    assert [e["time"] for e in schedule] == sorted(e["time"] for e in schedule)
+
+
 def test_receipt_is_signed(client: TestClient, completed_run: str) -> None:
     resp = client.get(f"/api/v1/forecast/leaderboard/{completed_run}/receipt")
     assert resp.status_code == 200

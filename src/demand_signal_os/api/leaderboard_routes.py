@@ -20,11 +20,13 @@ Auth: tier key via ``require_api_key`` (open in dev when DSO_API_KEYS unset).
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Any, Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from demand_signal_os.api.auth import require_dso_access
@@ -262,3 +264,69 @@ async def get_receipt(run_id: str) -> dict[str, Any]:
     )
     payload: dict[str, Any] = r.model_dump(mode="json")
     return payload
+
+
+_QUANTILE_COLS = ("q05", "q10", "q25", "q50", "q75", "q90", "q95")
+
+
+@router.get("/forecast/leaderboard/{run_id}/xlsx")
+async def get_leaderboard_xlsx(run_id: str) -> StreamingResponse:
+    """The leaderboard as a native .xlsx workbook: the ranked methods, the
+    winning method's per-horizon FORECASTED VALUES (a real widening band), and
+    a reproducibility summary — the Excel peer of the on-screen leaderboard."""
+    run = _get_run(run_id)
+    if run["status"] != "complete":
+        raise HTTPException(status_code=409, detail=f"run not complete: {run['status']}")
+    from demand_signal_os.api.forecast_export import leaderboard_to_xlsx
+    from demand_signal_os.leaderboard import forecast_path
+
+    result = run["result"]
+    # The winning method's forecast over the horizon (the actual numbers). Uses
+    # the same path fit as GET /winner; best-effort so a fit hiccup never blocks
+    # the ranked export, but normally always populated.
+    winner_forecast: list[dict[str, Any]] = []
+    try:
+        actuals = _build_actuals(run["request"])
+        config = _build_config(run["request"])
+        path = forecast_path(actuals, config, result.winner_method_id)
+        winner_forecast = [
+            {"h": i + 1,
+             **{q: getattr(qs, q) for q in _QUANTILE_COLS if getattr(qs, q, None) is not None}}
+            for i, qs in enumerate(path)
+        ]
+    except Exception:  # noqa: BLE001 — forecasted values are best-effort
+        winner_forecast = []
+    xlsx = leaderboard_to_xlsx(result.model_dump(mode="json"), winner_forecast)
+    return StreamingResponse(
+        io.BytesIO(xlsx),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename=leaderboard_{run_id}.xlsx"},
+    )
+
+
+@router.get("/forecast/leaderboard/{run_id}/arrivals.yaml")
+async def get_leaderboard_arrivals_yaml(run_id: str) -> StreamingResponse:
+    """The DSO→SimOS contract for this run: the winning forecast as a SimOS
+    ``arrivals.schedule`` YAML block SimOS consumes directly. Humans audit the
+    .xlsx; SimOS ingests this. Same tested adapter as the in-process handoff."""
+    run = _get_run(run_id)
+    if run["status"] != "complete":
+        raise HTTPException(status_code=409, detail=f"run not complete: {run['status']}")
+    from demand_signal_os.api.simos_export import forecast_to_simos_arrivals_yaml
+    from demand_signal_os.leaderboard import fit_winner_bundle, forecast_path
+
+    result = run["result"]
+    request = run["request"]
+    actuals = _build_actuals(request)
+    config = _build_config(request)
+    winner_bundle = fit_winner_bundle(actuals, config, result.winner_method_id)
+    path = forecast_path(actuals, config, result.winner_method_id)
+    text = forecast_to_simos_arrivals_yaml(
+        winner_bundle, path,
+        bucket_period=request.bucket_period, start_date=request.start_date,
+    )
+    return StreamingResponse(
+        io.BytesIO(text.encode("utf-8")),
+        media_type="application/x-yaml",
+        headers={"Content-Disposition": f"attachment; filename=arrivals_{run_id}.yaml"},
+    )

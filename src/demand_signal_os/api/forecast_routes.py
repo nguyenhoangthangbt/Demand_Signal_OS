@@ -163,3 +163,33 @@ async def single_forecast_xlsx(body: SingleForecastRequest) -> StreamingResponse
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": "attachment; filename=forecast.xlsx"},
     )
+
+
+@router.post("/forecast/single.yaml")
+async def single_forecast_arrivals_yaml(body: SingleForecastRequest) -> StreamingResponse:
+    """The DSO→SimOS contract for this forecast: a SimOS ``arrivals.schedule``
+    YAML block (one entry per horizon step) that SimOS consumes directly. Humans
+    audit the .xlsx; SimOS ingests this YAML."""
+    from demand_signal_os.api.simos_export import forecast_to_simos_arrivals_yaml
+    from demand_signal_os.leaderboard import fit_winner_bundle, forecast_path
+
+    actuals = _build_actuals(body)
+    cfg = _build_config(body)
+    try:
+        winner_bundle = fit_winner_bundle(actuals, cfg, body.method_id)
+        path = forecast_path(actuals, cfg, body.method_id)
+    except Exception as exc:  # noqa: BLE001 — clean 422, not a 500
+        raise HTTPException(
+            status_code=422,
+            detail=f"forecast failed for method '{body.method_id}': "
+                   f"{type(exc).__name__}: {exc}",
+        ) from exc
+    text = forecast_to_simos_arrivals_yaml(
+        winner_bundle, path,
+        bucket_period=body.bucket_period, start_date=body.start_date,
+    )
+    return StreamingResponse(
+        io.BytesIO(text.encode("utf-8")),
+        media_type="application/x-yaml",
+        headers={"Content-Disposition": "attachment; filename=arrivals.yaml"},
+    )

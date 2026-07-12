@@ -87,3 +87,74 @@ def forecast_to_xlsx(result: dict[str, Any], history: list[float]) -> bytes:
         footer=(f"DemandSignalOS {method} forecast — downloaded from "
                 "demand-signal.sim-os.ai"),
     )
+
+
+# Column order for the leaderboard sheet (metrics that exist on LeaderboardEntry).
+_LEADERBOARD_COLS = (
+    "rank", "method_id", "is_benchmark", "crps", "smape",
+    "pinball_q50", "pinball_q90", "wis", "coverage_50", "coverage_90",
+    "beats_all_benchmarks", "n_windows",
+)
+
+
+def leaderboard_to_xlsx(
+    result: dict[str, Any],
+    winner_forecast: list[dict[str, Any]] | None = None,
+) -> bytes:
+    """Build the forecaster-leaderboard workbook (.xlsx bytes) from a
+    ``LeaderboardResult`` dict — the ranked competition, the winning method's
+    per-horizon forecasted values, plus the winner + reproducibility summary.
+
+    ``winner_forecast`` is an ordered list of per-horizon quantile dicts
+    (``{"h": 1, "q05": .., "q50": .., "q95": ..}``) for the winning method — the
+    actual forecasted numbers over the horizon. Shape-tolerant throughout."""
+    entries = result.get("entries") or []
+    sheets: list[tuple[str, list[str], list[list[Any]]]] = []
+
+    # 1) Leaderboard — one row per method, ranked (as returned).
+    if entries:
+        headers = [c for c in _LEADERBOARD_COLS
+                   if any(c in e for e in entries)]
+        rows = [[e.get(c) for c in headers] for e in entries]
+        sheets.append(("Leaderboard", headers, rows))
+
+    # 2) Winner Forecast — the winning method's forecasted values per horizon
+    #    (a real widening band), so the export carries the actual numbers, not
+    #    just the ranking metrics.
+    if winner_forecast:
+        cols: list[str] = ["h"]
+        for step in winner_forecast:
+            for k in step.keys():
+                if k not in cols:
+                    cols.append(k)
+        rows = [[step.get(c) for c in cols] for step in winner_forecast]
+        sheets.append(("Winner Forecast", cols, rows))
+
+    # 3) Summary — winner + reproducibility + the run's config knobs.
+    cfg = result.get("config") or {}
+    summary: list[list[Any]] = [
+        ["winner_method_id", result.get("winner_method_id")],
+        ["winner_is_benchmark", result.get("winner_is_benchmark")],
+        ["n_methods", result.get("n_methods")],
+        ["content_hash", result.get("content_hash")],
+        ["feature_set_hash", result.get("feature_set_hash")],
+    ]
+    for ck in ("sku_id", "location_id", "horizon", "horizon_label", "season_length",
+               "forecaster_set", "intermittent_mode", "n_windows", "min_train_size",
+               "bucket_period", "seed"):
+        if cfg.get(ck) is not None:
+            summary.append([f"config.{ck}", cfg[ck]])
+    summary = [r for r in summary if r[1] is not None]
+    if summary:
+        sheets.append(("Summary", ["Field", "Value"], summary))
+
+    if not sheets:
+        sheets.append(("Leaderboard", ["Note"], [["leaderboard produced no entries"]]))
+
+    winner = result.get("winner_method_id") or "leaderboard"
+    return tables_to_xlsx(
+        sheets,
+        workbook_title="DemandSignalOS forecaster leaderboard",
+        footer=(f"DemandSignalOS leaderboard (winner: {winner}) — downloaded from "
+                "demand-signal.sim-os.ai"),
+    )
