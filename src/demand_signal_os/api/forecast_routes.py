@@ -193,3 +193,34 @@ async def single_forecast_arrivals_yaml(body: SingleForecastRequest) -> Streamin
         media_type="application/x-yaml",
         headers={"Content-Disposition": "attachment; filename=arrivals.yaml"},
     )
+
+
+@router.post("/forecast/single.simos.xlsx")
+async def single_forecast_arrivals_xlsx(body: SingleForecastRequest) -> StreamingResponse:
+    """The DSO->SimOS arrivals contract as a list-valued xlsx: the same "Arrival
+    Schedule" shape SimOS's excel-builder accepts (declares distribution=schedule
+    + one row per horizon step). This is the primitive contract SimOS imports to
+    overwrite a scenario's arrivals."""
+    from demand_signal_os.api.simos_export import forecast_to_simos_arrivals_xlsx
+    from demand_signal_os.leaderboard import fit_winner_bundle, forecast_path
+
+    actuals = _build_actuals(body)
+    cfg = _build_config(body)
+    try:
+        winner_bundle = fit_winner_bundle(actuals, cfg, body.method_id)
+        path = forecast_path(actuals, cfg, body.method_id)
+    except Exception as exc:  # noqa: BLE001 — clean 422, not a 500
+        raise HTTPException(
+            status_code=422,
+            detail=f"forecast failed for method '{body.method_id}': "
+                   f"{type(exc).__name__}: {exc}",
+        ) from exc
+    xlsx = forecast_to_simos_arrivals_xlsx(
+        winner_bundle, path,
+        bucket_period=body.bucket_period, start_date=body.start_date,
+    )
+    return StreamingResponse(
+        io.BytesIO(xlsx),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=simos_arrivals.xlsx"},
+    )

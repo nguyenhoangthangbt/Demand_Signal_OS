@@ -137,6 +137,27 @@ def test_leaderboard_to_xlsx_without_forecast_still_ships_ranking():
     assert wb.sheetnames == ["Leaderboard", "Summary"]  # no Winner Forecast sheet
 
 
+def test_single_forecast_simos_xlsx_is_shared_arrivals_contract():
+    """The DSO arrivals-schedule contract xlsx uses the shared excel_io spec and
+    declares distribution=schedule with the forecast list."""
+    from excel_io import ARRIVAL_SCHEDULE_SHEET, arrivals_schedule_spec, parse_xlsx
+
+    with TestClient(create_app()) as client:
+        resp = client.post(
+            "/api/v1/forecast/single.simos.xlsx",
+            json={"history": [10, 12, 9, 11, 13, 10, 12, 11, 10, 13, 9, 12],
+                  "horizon": 4, "season_length": 4, "method_id": "ets"},
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.headers["content-type"] == _XLSX_CT
+        vals, errs = parse_xlsx(arrivals_schedule_spec(), resp.content)
+        assert not [e for e in errs if e.severity == "error"]
+        assert vals["arrivals_distribution"] == "schedule"
+        rows = vals[ARRIVAL_SCHEDULE_SHEET]
+        assert len(rows) == 4  # one row per horizon step
+        assert rows[0]["time"] == 0.0 and rows[0]["rate_per_hour"] is not None
+
+
 def test_single_forecast_yaml_is_simos_arrivals():
     """POST /forecast/single.yaml returns a SimOS-consumable arrivals schedule."""
     import yaml

@@ -51,6 +51,47 @@ def _horizon_bundles(
     return bundles
 
 
+# The shared list-valued arrivals contract lives in excel_io (single source of
+# truth); DSO produces it and SimOS's overlay import consumes the SAME spec.
+from excel_io import ARRIVAL_SCHEDULE_SHEET as _ARRIVAL_SCHEDULE_SHEET  # noqa: E402
+
+
+def forecast_to_simos_arrivals_xlsx(
+    winner_bundle: Any,
+    path: list[Any],
+    *,
+    bucket_period: str = "day",
+    start_date: date | None = None,
+) -> bytes:
+    """The DSO->SimOS arrivals contract as a list-valued xlsx (the same shape
+    SimOS's excel-builder accepts). Declares ``arrivals_distribution=schedule``
+    and fills the Arrival Schedule sheet with one row per horizon step
+    ``(time, rate_per_hour, noise_std)`` from the forecast's widening band."""
+    from excel_io import arrivals_schedule_spec, generate_xlsx
+    from demand_signal_os.consumers.simos_arrivals_adapter import (
+        forecast_bundles_to_simos_schedule,
+    )
+
+    base = start_date or date(2026, 1, 1)
+    bundles = (
+        _horizon_bundles(winner_bundle, path, bucket_period=bucket_period, start_date=base)
+        if path
+        else [winner_bundle]
+    )
+    block = forecast_bundles_to_simos_schedule(bundles)
+    rows = [
+        {"time": e.get("time"), "rate_per_hour": e.get("rate_per_hour"),
+         "noise_std": e.get("noise_std", 0.0)}
+        for e in block.get("schedule", [])
+    ]
+    spec = arrivals_schedule_spec()
+    return generate_xlsx(
+        spec,
+        values={"arrivals_distribution": "schedule"},
+        tabular_rows={_ARRIVAL_SCHEDULE_SHEET: rows},
+    )
+
+
 def forecast_to_simos_arrivals_yaml(
     winner_bundle: Any,
     path: list[Any],
