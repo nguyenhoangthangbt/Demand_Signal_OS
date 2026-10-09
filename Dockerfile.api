@@ -11,7 +11,11 @@
 # ---------------------------------------------------------------------------
 # Stage 1: Builder
 # ---------------------------------------------------------------------------
-FROM python:3.13-slim AS builder
+FROM python:3.13.13-slim-trixie@sha256:aa938a849bcb82dce8f49480f056ab82bf5c1c3ebc294f0430f37b6820e7f286 AS builder
+# F1: pin every pip install to the package set production runs (constraints
+# generated from the live container; regenerate with pip list --format=freeze).
+COPY Demand_Signal_OS/constraints-api.txt /tmp/constraints.txt
+ENV PIP_CONSTRAINT=/tmp/constraints.txt
 
 WORKDIR /build
 
@@ -40,7 +44,7 @@ RUN pip install --no-cache-dir --prefix=/install \
 # ---------------------------------------------------------------------------
 # Stage 2: Runtime
 # ---------------------------------------------------------------------------
-FROM python:3.13-slim AS runtime
+FROM python:3.13.13-slim-trixie@sha256:aa938a849bcb82dce8f49480f056ab82bf5c1c3ebc294f0430f37b6820e7f286 AS runtime
 
 LABEL maintainer="DemandSignalOS Team"
 LABEL description="DemandSignalOS — full API (trust gate + forecaster leaderboard)"
