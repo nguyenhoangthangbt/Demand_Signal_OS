@@ -123,7 +123,7 @@ export default function App() {
           'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
       }}
     >
-      {/* Bar 1 — cross-engine nav (top of every page). Plan2Cash-first; access
+      {/* Bar 1: cross-engine nav (top of every page). P2C-first; access
           is gated per-tier by each engine (ops_schemas tier_access). */}
       <nav
         style={{
@@ -142,7 +142,7 @@ export default function App() {
           Engines
         </span>
         {([
-          ["Plan2Cash", "https://plan2cash.sim-os.ai"],
+          ["P2C", "https://plan2cash.sim-os.ai"],
           ["PlanningOS", "https://planning.sim-os.ai"],
           ["DemandSignalOS", null],
           ["SimOS", "https://supplychain.sim-os.ai"],
@@ -727,7 +727,7 @@ function TokenGate({
           Paste your Premium{" "}
           <code style={{ color: PALETTE.textMuted }}>mao_live_*</code> tier-key
           to unlock the template hub (download / validate / run xlsx workbooks
-          through the Plan2Cash router). The live probabilistic forecast below
+          through the P2C router). The live probabilistic forecast below
           works without a key. New here? Email{" "}
           <a href="mailto:admin@sim-os.ai" style={{ color: PALETTE.link }}>
             admin@sim-os.ai
@@ -1748,7 +1748,7 @@ function Footer() {
       </a>{" "}
       · part of the{" "}
       <a href="https://plan2cash.sim-os.ai" style={{ color: PALETTE.link, textDecoration: "none" }}>
-        Plan2Cash
+        P2C
       </a>{" "}
       composition · admin@sim-os.ai
     </footer>
