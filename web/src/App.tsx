@@ -306,7 +306,7 @@ function Hero() {
             fontWeight: 600,
           }}
         >
-          Probabilistic forecasting · censoring-honest
+          Probabilistic forecasting, censoring-honest
         </span>
         <h2 style={{ marginTop: 12, fontSize: isMobile ? "1.55rem" : "2rem", lineHeight: 1.2 }}>
           Forecasts that admit what they don't know.
@@ -727,7 +727,7 @@ function TokenGate({
           Paste your Premium{" "}
           <code style={{ color: PALETTE.textMuted }}>mao_live_*</code> tier-key
           to unlock the template hub (download / validate / run xlsx workbooks
-          through the P2C router). The live probabilistic forecast below
+          through P2C). The live probabilistic forecast below
           works without a key. New here? Email{" "}
           <a href="mailto:admin@sim-os.ai" style={{ color: PALETTE.link }}>
             admin@sim-os.ai
@@ -978,7 +978,7 @@ function WorkbenchSection({
                       color: PALETTE.textDim,
                     }}
                   >
-                    {t.sheet_count} sheet{t.sheet_count === 1 ? "" : "s"} ·{" "}
+                    {t.sheet_count} sheet{t.sheet_count === 1 ? "" : "s"},{" "}
                     {t.field_count} field{t.field_count === 1 ? "" : "s"}
                   </p>
                 </div>
@@ -1352,7 +1352,7 @@ function ForecastPreview({ series }: { series?: number[] | null }) {
     <section style={{ padding: "0 1.5rem 1.25rem", maxWidth: 900, margin: "0 auto" }}>
       <h3 style={{ fontSize: "1.1rem", marginBottom: 6 }}>
         Probabilistic forecast{" "}
-        <span style={{ fontSize: "0.7rem", color: PALETTE.ok, fontWeight: 400 }}>· live</span>
+        <span style={{ fontSize: "0.7rem", color: PALETTE.ok, fontWeight: 400 }}>(live)</span>
       </h3>
       <p style={{ margin: 0, marginBottom: 12, fontSize: "0.85rem", color: PALETTE.textDim }}>
         Solid line: q50 (median). Light band: q05 to q95 (the 90% prediction
@@ -1642,7 +1642,7 @@ function HowItWorks() {
         <span>
           How it works{" "}
           <span style={{ fontWeight: 400, fontSize: "0.85rem", color: PALETTE.textDim }}>
-            · the censoring problem
+            (the censoring problem)
           </span>
         </span>
         <span
@@ -1738,7 +1738,7 @@ function Footer() {
       }}
     >
       {/* Footer engines list removed — Bar 1 (top) is the canonical engine nav. */}
-      DemandSignalOS · included in SimOS{" "}
+      DemandSignalOS is part of Plan2Cash, included in the{" "}
       <a href="https://sim-os.ai/pricing" style={{ color: PALETTE.link, textDecoration: "none" }}>
         Premium
       </a>{" "}
@@ -1746,11 +1746,11 @@ function Footer() {
       <a href="https://sim-os.ai/enterprise/" style={{ color: PALETTE.link, textDecoration: "none" }}>
         Enterprise
       </a>{" "}
-      · part of the{" "}
+      plans and part of the{" "}
       <a href="https://plan2cash.sim-os.ai" style={{ color: PALETTE.link, textDecoration: "none" }}>
         P2C
       </a>{" "}
-      composition · admin@sim-os.ai
+      closed loop. Contact: admin@sim-os.ai
     </footer>
   );
 }

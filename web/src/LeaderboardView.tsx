@@ -694,7 +694,7 @@ function Results({
       {/* Reproducibility + receipt */}
       <div style={{ marginTop: 16, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
         <span style={{ fontSize: "0.75rem", color: PALETTE.textDim }}>
-          {result.n_methods} methods · reproducibility hash{" "}
+          {result.n_methods} methods, reproducibility hash{" "}
           <code style={{ color: PALETTE.textMuted }}>{result.content_hash}</code>
         </span>
         <button
