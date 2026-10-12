@@ -13,6 +13,7 @@
 import { useEffect, useState } from "react";
 import PremiumGate from "./PremiumGate";
 import { readSsoCookie } from "./sso";
+import { site } from "./lib/site";
 
 const API_BASE: string =
   (import.meta.env.VITE_DSO_API_BASE as string | undefined) ?? "/api/v1";
@@ -430,8 +431,8 @@ export default function LeaderboardView({ token = "" }: { token?: string }) {
         <strong style={{ color: PALETTE.textMuted }}>probabilistically</strong>, by CRPS and
         interval coverage, not point error. Each candidate is gated against the naive
         benchmarks: a model can rank #1 and still be flagged{" "}
-        <em>"doesn't beat naive."</em> The winner ships a bundle-ready forecast into
-        PlanningOS / SimOS / O2C.
+        <em>"doesn't beat naive."</em> The winner ships a bundle-ready forecast into{" "}
+        {site() === "plan2cash" ? "PlanningOS / SimOS / O2C." : "PlanningOS and SimOS."}
       </p>
       <p style={{ marginTop: 6, fontSize: "0.78rem", color: PALETTE.textFaint, lineHeight: 1.6, maxWidth: 700 }}>
         <strong style={{ color: PALETTE.textDim }}>CRPS</strong>: probabilistic accuracy of the
