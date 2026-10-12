@@ -142,11 +142,11 @@ export default function App() {
           Engines
         </span>
         {([
-          ["P2C", "https://plan2cash.sim-os.ai"],
-          ["PlanningOS", "https://planning.sim-os.ai"],
           ["DemandSignalOS", null],
+          ["PlanningOS", "https://planning.sim-os.ai"],
           ["SimOS", "https://supplychain.sim-os.ai"],
           ["Order2Cash", "https://o2c.sim-os.ai"],
+          ["P2C", "https://plan2cash.sim-os.ai"],
           ["AI Agents", "https://agents.sim-os.ai"],
           ["Guides", "https://guides.sim-os.ai"],
           ["Academy", "https://academy.sim-os.ai"],
