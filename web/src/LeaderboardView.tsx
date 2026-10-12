@@ -13,6 +13,7 @@
 import { useEffect, useState } from "react";
 import PremiumGate from "./PremiumGate";
 import { readSsoCookie } from "./sso";
+import { site } from "./lib/site";
 
 const API_BASE: string =
   (import.meta.env.VITE_DSO_API_BASE as string | undefined) ?? "/api/v1";
@@ -285,8 +286,8 @@ export default function LeaderboardView({ token = "" }: { token?: string }) {
     const key = apiKey.trim();
     if (!key) {
       setError(
-        "Enter your tier-key to run the leaderboard: sign in to the engine mesh, " +
-          "or paste a mao_live_ / dso_live_ key above.",
+        "Running the leaderboard needs an API key: sign in, " +
+          "or paste a mao_live_ or dso_live_ key above.",
       );
       setStatus("failed");
       return;
@@ -316,7 +317,7 @@ export default function LeaderboardView({ token = "" }: { token?: string }) {
           seed: 42,
         }),
       });
-      if (submit.status === 401) throw new Error("Tier key rejected (401). Check your tier key.");
+      if (submit.status === 401) throw new Error("That API key was not accepted. Check that you pasted the whole key.");
       if (!submit.ok) throw new Error(`Submit failed: ${submit.status}`);
       const { run_id } = await submit.json();
       setRunId(run_id);
@@ -430,8 +431,8 @@ export default function LeaderboardView({ token = "" }: { token?: string }) {
         <strong style={{ color: PALETTE.textMuted }}>probabilistically</strong>, by CRPS and
         interval coverage, not point error. Each candidate is gated against the naive
         benchmarks: a model can rank #1 and still be flagged{" "}
-        <em>"doesn't beat naive."</em> The winner ships a bundle-ready forecast into
-        PlanningOS / SimOS / O2C.
+        <em>"doesn't beat naive."</em> The winner ships a bundle-ready forecast into{" "}
+        {site() === "plan2cash" ? "PlanningOS / SimOS / O2C." : "PlanningOS and SimOS."}
       </p>
       <p style={{ marginTop: 6, fontSize: "0.78rem", color: PALETTE.textFaint, lineHeight: 1.6, maxWidth: 700 }}>
         <strong style={{ color: PALETTE.textDim }}>CRPS</strong>: probabilistic accuracy of the
@@ -455,8 +456,8 @@ export default function LeaderboardView({ token = "" }: { token?: string }) {
         />
         <p style={{ margin: "4px 0 0 0", fontSize: "0.7rem", color: PALETTE.textFaint }}>
           {apiKey.trim()
-            ? "Using your signed-in tier-key (a mao_live_ key via SSO, or a dso_live_ demo key)."
-            : "Required on the live API. Sign in to the engine mesh, or paste a mao_live_ / dso_live_ key."}
+            ? "Using the API key you signed in with (a mao_live_ key, or a dso_live_ demo key)."
+            : "Needed to run on the live service. Sign in, or paste a mao_live_ or dso_live_ key."}
         </p>
 
         <div style={{ marginTop: 12 }}>

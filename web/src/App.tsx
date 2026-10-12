@@ -15,6 +15,24 @@ import LeaderboardView from "./LeaderboardView";
 import VerifyView from "./VerifyView";
 import IdentityBadge from "./IdentityBadge";
 import { writeSsoCookie, clearSsoCookie } from "./sso";
+import { site } from "./lib/site";
+
+// The self-serve site (sim-os.ai) sells DSO in Premium; Order2Cash, P2C and
+// the P2C Excel template hub are Enterprise and live on plan2cash.com only.
+const IS_P2C_SITE = site() === "plan2cash";
+
+// Cross-engine nav, canonical data-flow order. `enterpriseOnly` entries show
+// on the plan2cash.com site only.
+const ENGINE_LINKS: { label: string; href: string | null; enterpriseOnly?: boolean }[] = [
+  { label: "DemandSignalOS", href: null },
+  { label: "PlanningOS", href: "https://planning.sim-os.ai" },
+  { label: "SimOS", href: "https://supplychain.sim-os.ai" },
+  { label: "Order2Cash", href: "https://o2c.sim-os.ai", enterpriseOnly: true },
+  { label: "P2C", href: "https://plan2cash.sim-os.ai", enterpriseOnly: true },
+  { label: "AI Agents", href: "https://agents.sim-os.ai" },
+  { label: "Guides", href: "https://guides.sim-os.ai" },
+  { label: "Academy", href: "https://academy.sim-os.ai" },
+];
 
 const API_BASE = "https://plan2cash-api.sim-os.ai";
 // DSO's own API (leaderboard + the v0.2 single-series forecast). Same base the
@@ -123,8 +141,9 @@ export default function App() {
           'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
       }}
     >
-      {/* Bar 1: cross-engine nav (top of every page). P2C-first; access
-          is gated per-tier by each engine (ops_schemas tier_access). */}
+      {/* Bar 1: cross-engine nav (top of every page), canonical data-flow
+          order, filtered per site; access is gated per-tier by each engine
+          (ops_schemas tier_access). */}
       <nav
         style={{
           display: "flex",
@@ -141,22 +160,13 @@ export default function App() {
         <span style={{ color: PALETTE.textFaint, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>
           Engines
         </span>
-        {([
-          ["DemandSignalOS", null],
-          ["PlanningOS", "https://planning.sim-os.ai"],
-          ["SimOS", "https://supplychain.sim-os.ai"],
-          ["Order2Cash", "https://o2c.sim-os.ai"],
-          ["P2C", "https://plan2cash.sim-os.ai"],
-          ["AI Agents", "https://agents.sim-os.ai"],
-          ["Guides", "https://guides.sim-os.ai"],
-          ["Academy", "https://academy.sim-os.ai"],
-        ] as [string, string | null][]).map(([label, href]) =>
+        {ENGINE_LINKS.filter((e) => IS_P2C_SITE || !e.enterpriseOnly).map(({ label, href }) =>
           href ? (
-            <a key={label} href={href} style={{ color: PALETTE.link, textDecoration: "none" }}>
+            <a key={label} href={href} style={{ color: PALETTE.link, textDecoration: "none", whiteSpace: "nowrap" }}>
               {label}
             </a>
           ) : (
-            <span key={label} style={{ color: PALETTE.text, fontWeight: 600 }}>{label}</span>
+            <span key={label} style={{ color: PALETTE.text, fontWeight: 600, whiteSpace: "nowrap" }}>{label}</span>
           )
         )}
       </nav>
@@ -181,7 +191,9 @@ export default function App() {
         <>
           <Hero />
           <LeaderboardSection />
-          {!token ? (
+          {/* The Excel template hub runs on the P2C API (Enterprise), so it
+              renders on the plan2cash.com site only. */}
+          {!IS_P2C_SITE ? null : !token ? (
             <TokenGate
               draftToken={draftToken}
               setDraftToken={setDraftToken}
@@ -724,8 +736,8 @@ function TokenGate({
             color: PALETTE.textDim,
           }}
         >
-          Paste your Enterprise{" "}
-          <code style={{ color: PALETTE.textMuted }}>mao_live_*</code> tier-key
+          Paste your Enterprise API key (it starts with{" "}
+          <code style={{ color: PALETTE.textMuted }}>mao_live_</code>)
           to open the Excel template hub (download, validate and run xlsx
           workbooks through P2C). The live probabilistic forecast below works
           on every plan, with or without a key. New here? Email{" "}
@@ -820,7 +832,7 @@ function WorkbenchSection({
           }
           if (r.status === 401) {
             throw new Error(
-              "That tier key wasn't recognized. It must be an active mao_live_* key. Contact admin@sim-os.ai for access.",
+              "That API key wasn't recognized. Check that you pasted the whole key, starting with mao_live_. Contact admin@sim-os.ai for access.",
             );
           }
           throw new Error(`${r.status} ${r.statusText}`);
@@ -1362,7 +1374,11 @@ function ForecastPreview({ series }: { series?: number[] | null }) {
             Forecasting your uploaded demand_history.
           </span>
         ) : (
-          <span>Edit the series below or upload a demand_history to forecast your own.</span>
+          <span>
+            {IS_P2C_SITE
+              ? "Edit the series below or upload a demand_history to forecast your own."
+              : "Edit the series below to forecast your own."}
+          </span>
         )}
       </p>
       <div style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 14, flexWrap: "wrap" }}>
@@ -1737,19 +1753,35 @@ function Footer() {
       }}
     >
       {/* Footer engines list removed — Bar 1 (top) is the canonical engine nav. */}
-      DemandSignalOS is part of Plan2Cash, included in the{" "}
-      <a href="https://sim-os.ai/pricing" style={{ color: PALETTE.link, textDecoration: "none" }}>
-        Premium
-      </a>{" "}
-      and{" "}
-      <a href="https://sim-os.ai/enterprise/" style={{ color: PALETTE.link, textDecoration: "none" }}>
-        Enterprise
-      </a>{" "}
-      plans and part of the{" "}
-      <a href="https://plan2cash.sim-os.ai" style={{ color: PALETTE.link, textDecoration: "none" }}>
-        P2C
-      </a>{" "}
-      closed loop. Contact: admin@sim-os.ai
+      {IS_P2C_SITE ? (
+        <>
+          DemandSignalOS is part of Plan2Cash, included in the{" "}
+          <a href="https://sim-os.ai/pricing?from=plan2cash" style={{ color: PALETTE.link, textDecoration: "none" }}>
+            Premium
+          </a>{" "}
+          and{" "}
+          <a href="https://plan2cash.com/pricing" style={{ color: PALETTE.link, textDecoration: "none" }}>
+            Enterprise
+          </a>{" "}
+          plans and part of the{" "}
+          <a href="https://plan2cash.sim-os.ai" style={{ color: PALETTE.link, textDecoration: "none" }}>
+            P2C
+          </a>{" "}
+          closed loop. Contact: admin@sim-os.ai
+        </>
+      ) : (
+        <>
+          DemandSignalOS is included in the{" "}
+          <a href="https://sim-os.ai/pricing" style={{ color: PALETTE.link, textDecoration: "none" }}>
+            Premium
+          </a>{" "}
+          plan. For{" "}
+          <a href="https://plan2cash.com/pricing" style={{ color: PALETTE.link, textDecoration: "none" }}>
+            Enterprise
+          </a>
+          , contact admin@sim-os.ai.
+        </>
+      )}
     </footer>
   );
 }

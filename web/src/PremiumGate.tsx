@@ -5,6 +5,8 @@
 // Run), so this is a UX courtesy: tell the user up-front instead of letting them
 // fill the whole form only to fail at submit.
 
+import { site } from "./lib/site";
+
 // Mirror of the App.tsx PALETTE (DSO's dark theme). Kept local so this component
 // is self-contained and styled consistently with the rest of the SPA.
 const PALETTE = {
@@ -43,7 +45,9 @@ export default function PremiumGate({ tier }: { tier?: string | null }) {
             lineHeight: 1.6,
           }}
         >
-          The forecaster leaderboard is included in the Premium and Enterprise plans.
+          {site() === "plan2cash"
+            ? "The forecaster leaderboard is included in the Premium and Enterprise plans."
+            : "The forecaster leaderboard is included in the Premium plan."}
           {tier ? (
             <>
               {" "}
