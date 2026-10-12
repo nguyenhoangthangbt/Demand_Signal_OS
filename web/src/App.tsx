@@ -1756,7 +1756,7 @@ function Footer() {
       {IS_P2C_SITE ? (
         <>
           DemandSignalOS is part of Plan2Cash, included in the{" "}
-          <a href="https://sim-os.ai/pricing" style={{ color: PALETTE.link, textDecoration: "none" }}>
+          <a href="https://sim-os.ai/pricing?from=plan2cash" style={{ color: PALETTE.link, textDecoration: "none" }}>
             Premium
           </a>{" "}
           and{" "}
