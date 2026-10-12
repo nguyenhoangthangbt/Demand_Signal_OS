@@ -44,7 +44,7 @@ export type TrustReceipt = {
 
 // Friendly engine label + the noun used in the plain-language verdict sentence.
 const ENGINE: Record<string, { label: string; noun: string }> = {
-  simulationos: { label: 'SimulationOS', noun: 'simulation' },
+  simulationos: { label: 'SimOS', noun: 'simulation' },
   order2cash: { label: 'Order2Cash', noun: 'order-to-cash run' },
   planningos: { label: 'PlanningOS', noun: 'plan' },
   demandsignal: { label: 'DemandSignalOS', noun: 'forecast' },
@@ -87,7 +87,7 @@ function fmtDate(iso?: string): string {
   if (isNaN(d.getTime())) return iso.slice(0, 19)
   const mon = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getUTCMonth()]
   const p = (n: number) => String(n).padStart(2, '0')
-  return `${mon} ${d.getUTCDate()}, ${d.getUTCFullYear()} · ${p(d.getUTCHours())}:${p(d.getUTCMinutes())} UTC`
+  return `${mon} ${d.getUTCDate()}, ${d.getUTCFullYear()}, ${p(d.getUTCHours())}:${p(d.getUTCMinutes())} UTC`
 }
 
 const fmtNum = (n: number | null): string =>
@@ -147,11 +147,11 @@ export default function VerifyPanel({
           <Shield ok={allPass} />
           <div>
             <div style={{ fontSize: 15, fontWeight: 700 }}>
-              {allPass ? 'Verified' : 'Verification failed'} <span style={{ color: C.faint, fontWeight: 600 }}>· {eng.label}</span>
+              {allPass ? 'Verified' : 'Verification failed'} <span style={{ color: C.faint, fontWeight: 600 }}>| {eng.label}</span>
             </div>
             <div style={{ fontSize: 13.5, color: C.sub, marginTop: 2, maxWidth: 560 }}>{takeaway}</div>
             <div style={{ fontSize: 11, color: C.faint, marginTop: 4, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>
-              {rows.length} checks · {hardFails} hard failures · {receipt.calibration_id}
+              {rows.length} checks | {hardFails} hard failures | {receipt.calibration_id}
             </div>
           </div>
         </div>

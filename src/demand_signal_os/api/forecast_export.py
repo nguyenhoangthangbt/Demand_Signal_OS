@@ -84,7 +84,7 @@ def forecast_to_xlsx(result: dict[str, Any], history: list[float]) -> bytes:
     return tables_to_xlsx(
         sheets,
         workbook_title="DemandSignalOS forecast",
-        footer=(f"DemandSignalOS {method} forecast — downloaded from "
+        footer=(f"DemandSignalOS {method} forecast, downloaded from "
                 "demand-signal.sim-os.ai"),
     )
 
@@ -155,6 +155,6 @@ def leaderboard_to_xlsx(
     return tables_to_xlsx(
         sheets,
         workbook_title="DemandSignalOS forecaster leaderboard",
-        footer=(f"DemandSignalOS leaderboard (winner: {winner}) — downloaded from "
+        footer=(f"DemandSignalOS leaderboard (winner: {winner}), downloaded from "
                 "demand-signal.sim-os.ai"),
     )

@@ -62,7 +62,7 @@ export default function IdentityBadge({ token }: { token: string }) {
 
   return (
     <span
-      title="Active account · role · tier"
+      title="Active account, role and tier"
       style={{
         marginLeft: "auto",
         color: TEXT_FAINT,
@@ -77,7 +77,7 @@ export default function IdentityBadge({ token }: { token: string }) {
       }}
     >
       <span style={{ color: LINK }}>●</span>
-      {parts.join(" · ")}
+      {parts.join(" | ")}
     </span>
   );
 }

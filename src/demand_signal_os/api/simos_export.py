@@ -18,7 +18,7 @@ from typing import Any
 import yaml
 
 _YAML_HEADER = (
-    "# SimOS arrivals — generated from a DemandSignalOS forecast (DSO→SimOS contract).\n"
+    "# SimOS arrivals: generated from a DemandSignalOS forecast.\n"
     "# Humans audit the .xlsx; SimOS consumes this. Splice `sources` into a SimOS\n"
     "# scenario and load via simulation_os.config.loader (ScheduleDistribution).\n"
 )

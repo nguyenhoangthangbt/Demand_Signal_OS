@@ -43,7 +43,7 @@ export default function PremiumGate({ tier }: { tier?: string | null }) {
             lineHeight: 1.6,
           }}
         >
-          The forecaster leaderboard is included with SimOS Premium and Enterprise.
+          The forecaster leaderboard is included in the Premium and Enterprise plans.
           {tier ? (
             <>
               {" "}

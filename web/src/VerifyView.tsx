@@ -121,7 +121,7 @@ export default function VerifyView() {
               fontWeight: 700,
             }}
           >
-            live · signed by the engine
+            live, signed by the engine
           </span>
         )}
       </div>
