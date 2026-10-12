@@ -724,8 +724,8 @@ function TokenGate({
             color: PALETTE.textDim,
           }}
         >
-          Paste your Enterprise{" "}
-          <code style={{ color: PALETTE.textMuted }}>mao_live_*</code> tier-key
+          Paste your Enterprise API key (it starts with{" "}
+          <code style={{ color: PALETTE.textMuted }}>mao_live_</code>)
           to open the Excel template hub (download, validate and run xlsx
           workbooks through P2C). The live probabilistic forecast below works
           on every plan, with or without a key. New here? Email{" "}
@@ -820,7 +820,7 @@ function WorkbenchSection({
           }
           if (r.status === 401) {
             throw new Error(
-              "That tier key wasn't recognized. It must be an active mao_live_* key. Contact admin@sim-os.ai for access.",
+              "That API key wasn't recognized. Check that you pasted the whole key, starting with mao_live_. Contact admin@sim-os.ai for access.",
             );
           }
           throw new Error(`${r.status} ${r.statusText}`);
