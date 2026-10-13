@@ -26,7 +26,7 @@ const IS_P2C_SITE = site() === "plan2cash";
 const ENGINE_LINKS: { label: string; href: string | null; enterpriseOnly?: boolean }[] = [
   { label: "DemandSignalOS", href: null },
   { label: "PlanningOS", href: "https://planning.sim-os.ai" },
-  { label: "SimOS", href: "https://supplychain.sim-os.ai" },
+  { label: "SimOS", href: "https://simos.sim-os.ai" },
   { label: "Order2Cash", href: "https://o2c.sim-os.ai", enterpriseOnly: true },
   { label: "P2C", href: "https://plan2cash.sim-os.ai", enterpriseOnly: true },
   { label: "AI Agents", href: "https://agents.sim-os.ai" },
