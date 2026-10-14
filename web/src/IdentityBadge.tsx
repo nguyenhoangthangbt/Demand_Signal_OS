@@ -9,6 +9,7 @@
 
 import { useEffect, useState } from "react";
 import { identityLabel, type WhoAmI } from "./lib/identity";
+import { authInit } from "./lib/session";
 
 // Same DSO API base the rest of App uses: same-origin "/api/v1" in dev,
 // the absolute demand-signal-api base in prod (VITE_DSO_API_BASE).
@@ -28,9 +29,8 @@ export default function IdentityBadge({ token }: { token: string }) {
       return;
     }
     let cancelled = false;
-    fetch(`${DSO_API}/account/whoami`, {
-      headers: { "X-API-Key": token },
-    })
+    // Session cookie mode: the cookie identifies the caller, no key header.
+    fetch(`${DSO_API}/account/whoami`, authInit(token, { headers: { "X-API-Key": token } }))
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
       .then((d: WhoAmI) => {
         if (!cancelled) setWho(d);

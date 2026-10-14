@@ -16,6 +16,7 @@ import VerifyView from "./VerifyView";
 import IdentityBadge from "./IdentityBadge";
 import SimosHandoffPanel from "./SimosHandoffPanel";
 import { writeSsoCookie, clearSsoCookie } from "./sso";
+import { authInit, endSession, isSessionToken, signInWithKey } from "./lib/session";
 import { site } from "./lib/site";
 import BatchForecast from "./BatchForecast";
 import { footerParts } from "./lib/planCopy";
@@ -125,9 +126,14 @@ interface TemplateMeta {
   field_count: number;
 }
 
-export default function App() {
-  const [token, setToken] = useState<string>(() => localStorage.getItem(TOKEN_KEY) ?? "");
-  const [draftToken, setDraftToken] = useState<string>(token);
+export default function App({ initialToken }: { initialToken?: string } = {}) {
+  // `token` is the key (bearer mode) or a non-secret session marker when the
+  // MAO session cookie carries the sign-in (lib/session.ts, P0-11 R2a).
+  const [token, setToken] = useState<string>(
+    () => initialToken ?? localStorage.getItem(TOKEN_KEY) ?? "",
+  );
+  const [draftToken, setDraftToken] = useState<string>(isSessionToken(token) ? "" : token);
+  const [signInError, setSignInError] = useState<string>("");
   // Series lifted from a validated demand_history upload -> the live forecast
   // below forecasts YOUR data, not the sample series.
   const [forecastSeries, setForecastSeries] = useState<number[] | null>(null);
@@ -136,6 +142,8 @@ export default function App() {
   const isLeaderboard = hash === "#leaderboard";
 
   useEffect(() => {
+    // Session cookie mode: the key lives only in MAO's HttpOnly cookie.
+    if (isSessionToken(token)) return;
     if (token) {
       localStorage.setItem(TOKEN_KEY, token);
       // Mirror into the parent-domain cookie so sibling *.sim-os.ai engines
@@ -190,7 +198,10 @@ export default function App() {
           Account, Sign out, identity badge). */}
       <Header
         token={token}
-        onSignOut={() => {
+        onSignOut={async () => {
+          // Session cookie mode: MAO revokes the session and clears its
+          // HttpOnly cookie and mao_sso for every engine.
+          if (isSessionToken(token)) await endSession();
           localStorage.removeItem(TOKEN_KEY);
           // Global sign-out: clear the shared .sim-os.ai cookie so signing out
           // here signs the user out of every engine (mirrors login-once).
@@ -213,7 +224,19 @@ export default function App() {
             <TokenGate
               draftToken={draftToken}
               setDraftToken={setDraftToken}
-              onSubmit={() => setToken(draftToken.trim())}
+              error={signInError}
+              onSubmit={async () => {
+                setSignInError("");
+                const r = await signInWithKey(draftToken.trim());
+                if ("error" in r) {
+                  setSignInError(
+                    "That API key wasn't recognized. Check that you pasted the whole key, starting with mao_live_.",
+                  );
+                  return;
+                }
+                setToken(r.token);
+                if (isSessionToken(r.token)) setDraftToken("");
+              }}
             />
           ) : (
             <WorkbenchSection token={token} onForecastSeries={setForecastSeries} />
@@ -676,10 +699,12 @@ function TokenGate({
   draftToken,
   setDraftToken,
   onSubmit,
+  error = "",
 }: {
   draftToken: string;
   setDraftToken: (v: string) => void;
   onSubmit: () => void;
+  error?: string;
 }) {
   return (
     <section
@@ -752,6 +777,11 @@ function TokenGate({
         >
           Continue
         </button>
+        {error && (
+          <p role="alert" style={{ margin: "8px 0 0", fontSize: "0.8rem", color: PALETTE.error }}>
+            {error}
+          </p>
+        )}
       </div>
     </section>
   );
@@ -787,9 +817,10 @@ function WorkbenchSection({
       setTemplates(null);
       return;
     }
-    fetch(`${API_BASE}/api/v1/templates`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
+    fetch(
+      `${API_BASE}/api/v1/templates`,
+      authInit(token, { headers: { Authorization: `Bearer ${token}` } }),
+    )
       .then((r) => {
         if (!r.ok) {
           // 403 vs 401 are distinct failures. 403 means the key IS valid but
@@ -822,7 +853,7 @@ function WorkbenchSection({
     try {
       const r = await fetch(
         `${API_BASE}/api/v1/templates/demandsignal/${name}/download`,
-        { headers: { Authorization: `Bearer ${token}` } },
+        authInit(token, { headers: { Authorization: `Bearer ${token}` } }),
       );
       if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
       const blob = await r.blob();
@@ -850,11 +881,11 @@ function WorkbenchSection({
       fd.append("file", file);
       const r = await fetch(
         `${API_BASE}/api/v1/templates/demandsignal/${selected}/validate`,
-        {
+        authInit(token, {
           method: "POST",
           headers: { Authorization: `Bearer ${token}` },
           body: fd,
-        },
+        }),
       );
       const d = await r.json();
       setValidateResult(d);

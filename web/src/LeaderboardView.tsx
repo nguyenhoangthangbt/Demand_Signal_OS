@@ -14,6 +14,7 @@ import { useEffect, useState } from "react";
 import PremiumGate from "./PremiumGate";
 import SimosHandoffPanel from "./SimosHandoffPanel";
 import { readSsoCookie } from "./sso";
+import { authInit, isSessionToken } from "./lib/session";
 import { site } from "./lib/site";
 import { planBacktest } from "./lib/backtestPlan";
 import { gatedPlan } from "./lib/planCopy";
@@ -190,10 +191,10 @@ export default function LeaderboardView({ token = "" }: { token?: string }) {
     const ctrl = new AbortController();
     // Fail-soft timeout: if whoami stalls, err OPEN rather than spin forever.
     const timer = window.setTimeout(() => ctrl.abort(), 6000);
-    fetch(`${API_BASE}/account/whoami`, {
-      headers: { "X-API-Key": token },
-      signal: ctrl.signal,
-    })
+    fetch(
+      `${API_BASE}/account/whoami`,
+      authInit(token, { headers: { "X-API-Key": token }, signal: ctrl.signal }),
+    )
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
       .then((d: { tier?: string | null }) => {
         const tier = (d.tier ?? "").toLowerCase();
@@ -222,11 +223,14 @@ export default function LeaderboardView({ token = "" }: { token?: string }) {
   // mao_sso cookie) so a signed-in user never has to re-paste a key. The
   // dual-accept gate (require_dso_access) takes a mao_live_ Bearer OR a
   // dso_live_ X-API-Key; authHeaders() routes by prefix.
-  const [apiKey, setApiKey] = useState<string>(() => token || readSsoCookie());
+  // P0-11 cookie mode: `token` is a session marker, never shown in the field;
+  // an empty field then runs on the session cookie (see credential()).
+  const prefill = () => (isSessionToken(token) ? "" : token || readSsoCookie());
+  const [apiKey, setApiKey] = useState<string>(prefill);
   useEffect(() => {
     // Adopt the handed-off session key if the field is still empty.
     if (!apiKey.trim()) {
-      const session = token || readSsoCookie();
+      const session = prefill();
       if (session) setApiKey(session);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -267,10 +271,15 @@ export default function LeaderboardView({ token = "" }: { token?: string }) {
     null,
   );
 
+  // A typed key wins; otherwise the signed-in session (cookie mode marker).
+  function credential(): string {
+    return apiKey.trim() || (isSessionToken(token) ? token : "");
+  }
+
   function authHeaders(json = false): Record<string, string> {
     const h: Record<string, string> = {};
-    const key = apiKey.trim();
-    if (key) {
+    const key = credential();
+    if (key && !isSessionToken(key)) {
       // Cross-engine SSO: a `mao_live_*` Enterprise tier-key authenticates via
       // platform_auth, which expects `Authorization: Bearer` — sending it as
       // `X-API-Key` 401s (mirrors O2C's frontend/src/api/auth.ts fix). Any other
@@ -291,7 +300,7 @@ export default function LeaderboardView({ token = "" }: { token?: string }) {
     setResult(null);
     setReceipt(null);
     // W-07: never a silent no-op — require a key (or sign-in) and say so.
-    const key = apiKey.trim();
+    const key = credential();
     if (!key) {
       setError(
         "Running the leaderboard needs an API key: sign in, " +
@@ -310,7 +319,7 @@ export default function LeaderboardView({ token = "" }: { token?: string }) {
       return;
     }
     try {
-      const submit = await fetch(`${API_BASE}/forecast/leaderboard`, {
+      const submit = await fetch(`${API_BASE}/forecast/leaderboard`, authInit(key, {
         method: "POST",
         headers: authHeaders(true),
         body: JSON.stringify({
@@ -327,7 +336,7 @@ export default function LeaderboardView({ token = "" }: { token?: string }) {
           min_train_size: plan.minTrainSize,
           seed: 42,
         }),
-      });
+      }));
       if (submit.status === 401) throw new Error("That API key was not accepted. Check that you pasted the whole key.");
       if (!submit.ok) {
         // The API answers a refused run with a plain-sentence `detail`.
@@ -348,9 +357,10 @@ export default function LeaderboardView({ token = "" }: { token?: string }) {
       // Poll until complete.
       for (let i = 0; i < 120; i++) {
         await new Promise((res) => setTimeout(res, 1500));
-        const poll = await fetch(`${API_BASE}/forecast/leaderboard/${run_id}`, {
-          headers: authHeaders(),
-        });
+        const poll = await fetch(
+          `${API_BASE}/forecast/leaderboard/${run_id}`,
+          authInit(key, { headers: authHeaders() }),
+        );
         const body = await poll.json();
         if (body.status === "complete") {
           setResult(body.result as LeaderboardResult);
@@ -371,9 +381,10 @@ export default function LeaderboardView({ token = "" }: { token?: string }) {
   async function fetchReceipt() {
     if (!runId) return;
     try {
-      const r = await fetch(`${API_BASE}/forecast/leaderboard/${runId}/receipt`, {
-        headers: authHeaders(),
-      });
+      const r = await fetch(
+        `${API_BASE}/forecast/leaderboard/${runId}/receipt`,
+        authInit(credential(), { headers: authHeaders() }),
+      );
       if (!r.ok) throw new Error(`receipt failed: ${r.status}`);
       const rec = await r.json();
       setReceipt({ calibration_id: rec.calibration_id, signature: rec.signature });
@@ -388,9 +399,10 @@ export default function LeaderboardView({ token = "" }: { token?: string }) {
   async function downloadXlsx() {
     if (!runId) return;
     try {
-      const r = await fetch(`${API_BASE}/forecast/leaderboard/${runId}/xlsx`, {
-        headers: authHeaders(),
-      });
+      const r = await fetch(
+        `${API_BASE}/forecast/leaderboard/${runId}/xlsx`,
+        authInit(credential(), { headers: authHeaders() }),
+      );
       if (!r.ok) throw new Error(`export failed: ${r.status}`);
       const blob = await r.blob();
       const url = URL.createObjectURL(blob);
@@ -594,7 +606,13 @@ export default function LeaderboardView({ token = "" }: { token?: string }) {
       {result && showSimos && runId && (
         <div style={{ marginTop: 12 }}>
           <SimosHandoffPanel
-            source={{ kind: "leaderboard", apiBase: API_BASE, runId, headers: () => authHeaders() }}
+            source={{
+              kind: "leaderboard",
+              apiBase: API_BASE,
+              runId,
+              headers: () => authHeaders(),
+              credentials: () => authInit(credential()).credentials,
+            }}
           />
         </div>
       )}

@@ -46,6 +46,8 @@ export type HandoffSource =
       apiBase: string;
       runId: string;
       headers: () => Record<string, string>;
+      // P0-11 cookie mode: "include" so the session cookie rides along.
+      credentials?: () => RequestCredentials | undefined;
     };
 
 function saveBlob(blob: Blob, name: string) {
@@ -69,7 +71,7 @@ async function fetchPreview(source: HandoffSource, basis: HandoffBasis): Promise
         })
       : await fetch(
           `${source.apiBase}/forecast/leaderboard/${source.runId}/arrivals.preview?${basisQuery(basis)}`,
-          { headers: source.headers() },
+          { headers: source.headers(), credentials: source.credentials?.() },
         );
   if (!r.ok) throw new HandoffError(r.status);
   return (await r.json()) as HandoffPreview;
@@ -138,7 +140,7 @@ export default function SimosHandoffPanel({ source }: { source: HandoffSource })
       } else {
         r = await fetch(
           `${source.apiBase}/forecast/leaderboard/${source.runId}/arrivals.yaml?${basisQuery(basis)}`,
-          { headers: source.headers() },
+          { headers: source.headers(), credentials: source.credentials?.() },
         );
       }
       if (!r.ok) throw new HandoffError(r.status);

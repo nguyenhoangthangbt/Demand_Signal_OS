@@ -13,6 +13,7 @@
 
 import { useEffect, useState } from "react";
 import { readSsoCookie } from "./sso";
+import { authInit, isSessionToken } from "./lib/session";
 import { site } from "./lib/site";
 import { gatedPlan } from "./lib/planCopy";
 import {
@@ -113,7 +114,9 @@ export default function BatchForecast({
   const [error, setError] = useState<string>("");
   const [result, setResult] = useState<BatchResponse | null>(null);
 
-  const key = (token || readSsoCookie()).trim();
+  // A session marker (P0-11 cookie mode) is used as is: authInit() turns it
+  // into cookie credentials. Only bearer mode falls back to mao_sso.
+  const key = (isSessionToken(token) ? token : token || readSsoCookie()).trim();
 
   async function run(target: File | null = file) {
     setError("");
@@ -133,11 +136,14 @@ export default function BatchForecast({
         season_length: String(season),
         method_id: "auto",
       });
-      const r = await fetch(`${DSO_API}/forecast/batch?${qs.toString()}`, {
-        method: "POST",
-        headers: authHeaders(key),
-        body: await target.arrayBuffer(),
-      });
+      const r = await fetch(
+        `${DSO_API}/forecast/batch?${qs.toString()}`,
+        authInit(key, {
+          method: "POST",
+          headers: authHeaders(key),
+          body: await target.arrayBuffer(),
+        }),
+      );
       if (!r.ok) {
         const detail = await r
           .json()
