@@ -13,6 +13,8 @@
 
 import { useEffect, useState } from "react";
 import { readSsoCookie } from "./sso";
+import { site } from "./lib/site";
+import { gatedPlan } from "./lib/planCopy";
 import {
   SEASON_OPTIONS,
   DEFAULT_HORIZON,
@@ -88,6 +90,8 @@ function authHeaders(key: string): Record<string, string> {
   return h;
 }
 
+const PLAN = gatedPlan(site());
+
 const fmt = (v: number): string => v.toLocaleString("en-US", { maximumFractionDigits: 0 });
 
 export default function BatchForecast({
@@ -119,7 +123,7 @@ export default function BatchForecast({
       return;
     }
     if (!key) {
-      setError("Forecasting a file is part of the Premium plan. Sign in with your key to use it.");
+      setError(`Forecasting a file is part of the ${PLAN.plan} plan. Sign in with your key to use it.`);
       return;
     }
     setBusy(true);
@@ -141,7 +145,7 @@ export default function BatchForecast({
           .catch(() => "");
         if (r.status === 401) throw new Error("That API key was not accepted. Sign in again or check the key.");
         if (r.status === 403) {
-          throw new Error("Forecasting a file is part of the Premium plan, and your key is on a different plan.");
+          throw new Error(`Forecasting a file is part of the ${PLAN.plan} plan, and your key is on a different plan.`);
         }
         throw new Error(detail || "The file could not be forecast. Please try again.");
       }
@@ -285,9 +289,9 @@ export default function BatchForecast({
           }}
         >
           {error}{" "}
-          {error.includes("Premium") && (
-            <a href="https://sim-os.ai/pricing" style={{ color: PALETTE.link }}>
-              See plans
+          {error.includes(`${PLAN.plan} plan`) && (
+            <a href={PLAN.href} style={{ color: PALETTE.link }}>
+              {PLAN.linkLabel}
             </a>
           )}
         </div>

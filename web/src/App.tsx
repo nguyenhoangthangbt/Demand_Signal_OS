@@ -17,6 +17,7 @@ import IdentityBadge from "./IdentityBadge";
 import { writeSsoCookie, clearSsoCookie } from "./sso";
 import { site } from "./lib/site";
 import BatchForecast from "./BatchForecast";
+import { footerParts } from "./lib/planCopy";
 import { niceTicks, formatTick, xLabelIndexes } from "./lib/chartAxis";
 import {
   SEASON_OPTIONS,
@@ -1831,34 +1832,16 @@ function Footer() {
       }}
     >
       {/* Footer engines list removed — Bar 1 (top) is the canonical engine nav. */}
-      {IS_P2C_SITE ? (
-        <>
-          DemandSignalOS is part of Plan2Cash, included in the{" "}
-          <a href="https://sim-os.ai/pricing?from=plan2cash" style={{ color: PALETTE.link, textDecoration: "none" }}>
-            Premium
-          </a>{" "}
-          and{" "}
-          <a href="https://plan2cash.com/pricing" style={{ color: PALETTE.link, textDecoration: "none" }}>
-            Enterprise
-          </a>{" "}
-          plans and part of the{" "}
-          <a href="https://plan2cash.sim-os.ai" style={{ color: PALETTE.link, textDecoration: "none" }}>
-            P2C
-          </a>{" "}
-          closed loop. Contact: admin@sim-os.ai
-        </>
-      ) : (
-        <>
-          DemandSignalOS is included in the{" "}
-          <a href="https://sim-os.ai/pricing" style={{ color: PALETTE.link, textDecoration: "none" }}>
-            Premium
-          </a>{" "}
-          plan. For{" "}
-          <a href="https://plan2cash.com/pricing" style={{ color: PALETTE.link, textDecoration: "none" }}>
-            Enterprise
+      {/* E-09 / F-22: plan2cash.com is Enterprise only, so its footer names
+          no self-serve plan (lib/planCopy.ts, tested per site). */}
+      {footerParts(site()).map((part, i) =>
+        typeof part === "string" ? (
+          <span key={i}>{part}</span>
+        ) : (
+          <a key={i} href={part.href} style={{ color: PALETTE.link, textDecoration: "none" }}>
+            {part.label}
           </a>
-          , contact admin@sim-os.ai.
-        </>
+        ),
       )}
     </footer>
   );

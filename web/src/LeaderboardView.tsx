@@ -15,6 +15,7 @@ import PremiumGate from "./PremiumGate";
 import { readSsoCookie } from "./sso";
 import { site } from "./lib/site";
 import { planBacktest } from "./lib/backtestPlan";
+import { gatedPlan } from "./lib/planCopy";
 import { winnerVerdict, type Calibration } from "./lib/winnerVerdict";
 
 const API_BASE: string =
@@ -336,7 +337,7 @@ export default function LeaderboardView({ token = "" }: { token?: string }) {
         throw new Error(
           detail ||
             (submit.status === 403
-              ? "The leaderboard is part of the Premium plan, and your key is on a different plan."
+              ? `The leaderboard is part of the ${gatedPlan(site()).plan} plan, and your key is on a different plan.`
               : "The leaderboard could not start this run. Please try again."),
         );
       }
