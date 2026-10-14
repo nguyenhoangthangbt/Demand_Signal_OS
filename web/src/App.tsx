@@ -10,7 +10,7 @@
 // → fill → upload + validate → run → see synthetic forecast band +
 // drift signal.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import LeaderboardView from "./LeaderboardView";
 import VerifyView from "./VerifyView";
 import IdentityBadge from "./IdentityBadge";
@@ -33,6 +33,7 @@ import {
   type ResolvedSettings,
 } from "./lib/forecastSettings";
 import GOLDEN_BOARD from "./goldenLeaderboard.json";
+import { chartFrame, labelAnchor } from "./lib/chartFrame";
 
 // The self-serve site (sim-os.ai) sells DSO in Premium; Order2Cash, P2C and
 // the P2C Excel template hub are Enterprise and live on plan2cash.com only.
@@ -351,7 +352,8 @@ function Hero() {
         <span
           style={{
             display: "inline-block",
-            fontSize: isMobile ? "0.6rem" : "0.65rem",
+            // 11.2 px on a phone (was 9.6 px, audit D-08).
+            fontSize: isMobile ? "0.7rem" : "0.65rem",
             padding: "2px 8px",
             backgroundColor: PALETTE.warnBg,
             color: PALETTE.warn,
@@ -630,14 +632,15 @@ function LeaderboardSection() {
                         {m.label}
                       </span>
                       {m.is_benchmark && (
-                        <span style={{ fontSize: "0.62rem", color: PALETTE.textFaint, whiteSpace: "nowrap" }}>
+                        <span style={{ fontSize: isMobile ? "0.7rem" : "0.62rem", color: PALETTE.textFaint, whiteSpace: "nowrap" }}>
                           naive benchmark
                         </span>
                       )}
                       {isWinner && (
                         <span
                           style={{
-                            fontSize: "0.58rem",
+                            // 11.2 px on a phone (was 9.3 px, audit D-08).
+                            fontSize: isMobile ? "0.7rem" : "0.58rem",
                             fontWeight: 700,
                             letterSpacing: "0.08em",
                             color: PALETTE.warn,
@@ -1170,6 +1173,16 @@ function ForecastPreview({ series }: { series?: number[] | null }) {
   const [runSettings, setRunSettings] = useState(() =>
     forecastRequestSettings("auto", DEFAULT_HORIZON),
   );
+  // Draw at the real rendered width on a phone so labels stay readable (D-08).
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [svgPx, setSvgPx] = useState<number | null>(null);
+  useEffect(() => {
+    const el = svgRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => setSvgPx(el.getBoundingClientRect().width));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   const runForecast = (
     hist: number[],
@@ -1247,9 +1260,15 @@ function ForecastPreview({ series }: { series?: number[] | null }) {
   const minY = yTicks[0];
   const maxY = yTicks[yTicks.length - 1];
   const tickLabelChars = Math.max(...yTicks.map((t) => formatTick(t).length));
-  const padding = { top: 20, right: 16, bottom: 40, left: 22 + tickLabelChars * 6 };
-  const w = 720;
-  const h = 290;
+  // D-08: the canvas comes from chartFrame (the real rendered width on a
+  // phone, so a label of N units renders at N px). The tick-width left padding
+  // is tuned for the 9-unit desktop labels and applies on desktop only; both
+  // keep the 40-unit bottom for the period labels and the axis title.
+  const frame = chartFrame(svgPx);
+  const { w, h } = frame;
+  const padding = frame.phone
+    ? { ...frame.padding, bottom: 40 }
+    : { top: 20, right: 16, bottom: 40, left: 22 + tickLabelChars * 6 };
   const innerW = w - padding.left - padding.right;
   const innerH = h - padding.top - padding.bottom;
   const xStep = innerW / Math.max(1, total - 1);
@@ -1534,7 +1553,7 @@ function ForecastPreview({ series }: { series?: number[] | null }) {
           padding: "1rem",
         }}
       >
-        <svg width="100%" height={h} viewBox={`0 0 ${w} ${h}`} style={{ display: "block" }}>
+        <svg ref={svgRef} width="100%" height={h} viewBox={`0 0 ${w} ${h}`} style={{ display: "block" }}>
           {yTicks.map((v) => (
             <g key={v}>
               <line
@@ -1549,7 +1568,7 @@ function ForecastPreview({ series }: { series?: number[] | null }) {
                 x={padding.left - 6}
                 y={yScale(v) + padding.top + 3}
                 fill={PALETTE.textDim}
-                fontSize={9}
+                fontSize={frame.font}
                 textAnchor="end"
               >
                 {formatTick(v)}
@@ -1562,20 +1581,20 @@ function ForecastPreview({ series }: { series?: number[] | null }) {
               x={i * xStep + padding.left}
               y={h - padding.bottom + 14}
               fill={i >= HISTORY.length ? PALETTE.median : PALETTE.textDim}
-              fontSize={9}
+              fontSize={frame.font}
               textAnchor="middle"
             >
               {i + 1}
             </text>
           ))}
-          <text x={padding.left + innerW / 2} y={h - 6} fill={PALETTE.textFaint} fontSize={9} textAnchor="middle">
+          <text x={padding.left + innerW / 2} y={h - 6} fill={PALETTE.textFaint} fontSize={frame.font} textAnchor="middle">
             Period (history, then forecast)
           </text>
           <text
             x={10}
             y={padding.top + innerH / 2}
             fill={PALETTE.textFaint}
-            fontSize={9}
+            fontSize={frame.font}
             textAnchor="middle"
             transform={`rotate(-90 10 ${padding.top + innerH / 2})`}
           >
@@ -1590,14 +1609,21 @@ function ForecastPreview({ series }: { series?: number[] | null }) {
             strokeDasharray="3 3"
             strokeWidth={0.7}
           />
-          <text
-            x={(HISTORY.length - 1) * xStep + padding.left + 4}
-            y={padding.top + 10}
-            fill={PALETTE.textDim}
-            fontSize={9}
-          >
-            history → forecast
-          </text>
+          {(() => {
+            const bx = (HISTORY.length - 1) * xStep + padding.left;
+            const anchor = labelAnchor(bx, "history → forecast", frame);
+            return (
+              <text
+                x={anchor === "start" ? bx + 4 : bx - 4}
+                y={padding.top + 10}
+                fill={PALETTE.textDim}
+                fontSize={frame.font}
+                textAnchor={anchor}
+              >
+                history → forecast
+              </text>
+            );
+          })()}
           <polygon points={bandPoints} fill={PALETTE.band} fillOpacity={0.18} />
           <path d={historyPath} fill="none" stroke={PALETTE.textMuted} strokeWidth={1.5} />
           <path
@@ -1633,7 +1659,7 @@ function ForecastPreview({ series }: { series?: number[] | null }) {
             <text
               x={hover * xStep + padding.left}
               y={yScale(HISTORY[hover]) + padding.top - 8}
-              fontSize={10}
+              fontSize={frame.hover}
               fill={PALETTE.text}
               textAnchor="middle"
             >
@@ -1644,12 +1670,12 @@ function ForecastPreview({ series }: { series?: number[] | null }) {
             <text
               x={hover * xStep + padding.left}
               y={yScale(FORECAST[hover - HISTORY.length].q50) + padding.top - 8}
-              fontSize={10}
+              fontSize={frame.hover}
               fill={PALETTE.median}
               textAnchor="middle"
             >
               {FORECAST[hover - HISTORY.length].q50}
-              <tspan fill={PALETTE.textDim} fontSize={8}>
+              <tspan fill={PALETTE.textDim} fontSize={frame.small}>
                 {` (${FORECAST[hover - HISTORY.length].q05}-${FORECAST[hover - HISTORY.length].q95})`}
               </tspan>
             </text>
