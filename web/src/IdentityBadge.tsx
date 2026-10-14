@@ -8,6 +8,7 @@
 // half-empty chip. Styled to blend into the muted nav (small font, faint color).
 
 import { useEffect, useState } from "react";
+import { identityLabel, type WhoAmI } from "./lib/identity";
 
 // Same DSO API base the rest of App uses: same-origin "/api/v1" in dev,
 // the absolute demand-signal-api base in prod (VITE_DSO_API_BASE).
@@ -17,16 +18,6 @@ const DSO_API: string =
 // Mirror of the two muted PALETTE colors used by the nav (App.tsx PALETTE).
 const TEXT_FAINT = "#64748b";
 const LINK = "#7dd3fc";
-
-interface WhoAmI {
-  name: string | null;
-  role: string | null;
-  tier: string | null;
-}
-
-function cap(s: string): string {
-  return s.length ? s[0].toUpperCase() + s.slice(1).toLowerCase() : s;
-}
 
 export default function IdentityBadge({ token }: { token: string }) {
   const [who, setWho] = useState<WhoAmI | null>(null);
@@ -52,17 +43,15 @@ export default function IdentityBadge({ token }: { token: string }) {
     };
   }, [token]);
 
-  // Nothing to show until we have a resolved name. Fail-soft: the endpoint
-  // returns all-null for an unrecognized key / MAO outage.
-  if (!token || !who || !who.name) return null;
-
-  const parts = [who.name];
-  if (who.role) parts.push(who.role.toUpperCase());
-  if (who.tier) parts.push(cap(who.tier));
+  // Name and plan only, never the internal role (audit 2026-10-12, B-36 /
+  // C-25 / F-23). Nothing to show until one of the two resolves. Fail-soft:
+  // the endpoint returns all-null for an unrecognized key / MAO outage.
+  const label = token ? identityLabel(who) : null;
+  if (!label) return null;
 
   return (
     <span
-      title="Active account, role and tier"
+      title="Signed-in account and plan"
       style={{
         marginLeft: "auto",
         color: TEXT_FAINT,
@@ -77,7 +66,7 @@ export default function IdentityBadge({ token }: { token: string }) {
       }}
     >
       <span style={{ color: LINK }}>●</span>
-      {parts.join(" | ")}
+      {label}
     </span>
   );
 }
