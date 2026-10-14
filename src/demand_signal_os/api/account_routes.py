@@ -22,7 +22,7 @@ import os
 from typing import Annotated, Any
 
 import httpx
-from fastapi import APIRouter, Header
+from fastapi import APIRouter, Header, Request
 
 router = APIRouter(tags=["account"])
 
@@ -37,6 +37,7 @@ def _mao_base() -> str:
 
 @router.get("/account/whoami")
 async def account_whoami(
+    request: Request,
     x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
     authorization: Annotated[str | None, Header()] = None,
 ) -> dict[str, Any]:
@@ -44,6 +45,17 @@ async def account_whoami(
     key = (x_api_key or "").strip()
     if not key and authorization and authorization.startswith("Bearer "):
         key = authorization.removeprefix("Bearer ").strip()
+    extra_headers: dict[str, str] = {}
+    if x_api_key is None and authorization is None:
+        # P0-11 R1: the browser session cookie; its session id goes to MAO so
+        # a revoked session shows no identity.
+        from demand_signal_os.api.auth import session_credential
+
+        cred = session_credential(request)
+        if cred is not None:
+            from platform_auth.session import SESSION_HEADER
+
+            key, extra_headers = cred.token, {SESSION_HEADER: cred.session_id}
     if not key or not key.startswith("mao_live_"):
         return {"name": None, "role": None, "tier": None}
 
@@ -51,7 +63,7 @@ async def account_whoami(
         async with httpx.AsyncClient(timeout=8.0) as client:
             resp = await client.get(
                 f"{_mao_base()}/account/profile",
-                headers={"Authorization": f"Bearer {key}"},
+                headers={"Authorization": f"Bearer {key}", **extra_headers},
             )
     except (httpx.HTTPError, OSError):
         return {"name": None, "role": None, "tier": None}

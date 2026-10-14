@@ -10,6 +10,14 @@ Behaviour:
 - ``DSO_API_KEYS`` unset/empty  -> open (dev mode); a one-time warning is logged.
 - ``DSO_API_KEYS`` set          -> a matching ``X-API-Key`` header is required;
   otherwise 401.
+
+P0-11 R1 (feature flag ``MAO_SESSION_SEAL_KEY``): ``require_dso_access`` also
+accepts the HttpOnly ``__Secure-mao_session`` cookie MAO issues (the customer's
+``mao_live_`` key, sealed), when the request carries neither ``Authorization``
+nor ``X-API-Key``. A cookie-authenticated unsafe request needs an allowlisted
+``Origin`` and ``X-Requested-With: mao`` (403 otherwise); the session id goes
+to MAO as ``X-Mao-Session`` so a revoked session is 401. Seal key unset: the
+cookie is ignored and behaviour is unchanged.
 """
 
 from __future__ import annotations
@@ -17,7 +25,7 @@ from __future__ import annotations
 import hmac
 import logging
 import os
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import Header, HTTPException, Request, status
 
@@ -64,6 +72,36 @@ async def require_api_key(
     return x_api_key
 
 
+def session_credential(request: Request) -> Any:
+    """The browser-session credential of ``request``, or None (feature off,
+    a credential header present, or no usable cookie)."""
+    try:
+        from platform_auth.session import credential_from_request, keyring_from_env
+    except ImportError:
+        return None
+    if keyring_from_env() is None:
+        return None
+    if request.headers.get("authorization") or request.headers.get("x-api-key"):
+        return None
+    cred = credential_from_request(request)
+    if cred is None or not cred.via_cookie:
+        return None
+    return cred
+
+
+async def _premium_or_403(resolver: Any, token: str, session_id: str | None) -> str:
+    if session_id is None:
+        plan = await resolver.resolve_plan(token)
+    else:
+        plan = await resolver.resolve_plan(token, session_id=session_id)
+    if not meets_min(plan, Tier.PREMIUM):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"DSO requires premium+; your plan is '{plan}'.",
+        )
+    return f"mao:{plan}"
+
+
 async def require_dso_access(
     request: Request,
     x_api_key: Annotated[str | None, Header()] = None,
@@ -83,12 +121,15 @@ async def require_dso_access(
         if token.startswith("mao_live_"):
             resolver = getattr(request.app.state, "mao_tier_resolver", None)
             if resolver is not None and _TIER_OK:
-                plan = await resolver.resolve_plan(token)
-                if not meets_min(plan, Tier.PREMIUM):
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail=f"DSO requires premium+; your plan is '{plan}'.",
-                    )
-                return f"mao:{plan}"
+                return await _premium_or_403(resolver, token, None)
             # resolver/tier unavailable -> fall through to the dso_live_ path
+    elif authorization is None and x_api_key is None:
+        # P0-11 R1: the browser session cookie (feature-flagged).
+        cred = session_credential(request)
+        resolver = getattr(request.app.state, "mao_tier_resolver", None)
+        if cred is not None and resolver is not None and _TIER_OK:
+            from platform_auth.session import require_browser_origin
+
+            require_browser_origin(request, cred)
+            return await _premium_or_403(resolver, cred.token, cred.session_id)
     return await require_api_key(x_api_key)
