@@ -12,6 +12,7 @@
 
 import { useEffect, useState } from "react";
 import PremiumGate from "./PremiumGate";
+import SimosHandoffPanel from "./SimosHandoffPanel";
 import { readSsoCookie } from "./sso";
 import { site } from "./lib/site";
 import { planBacktest } from "./lib/backtestPlan";
@@ -405,28 +406,10 @@ export default function LeaderboardView({ token = "" }: { token?: string }) {
     }
   }
 
-  // SimOS arrivals contract: the winning forecast as a SimOS-consumable
-  // arrivals.schedule YAML. Humans audit the .xlsx; SimOS ingests this YAML.
-  async function downloadArrivalsYaml() {
-    if (!runId) return;
-    try {
-      const r = await fetch(`${API_BASE}/forecast/leaderboard/${runId}/arrivals.yaml`, {
-        headers: authHeaders(),
-      });
-      if (!r.ok) throw new Error(`SimOS YAML export failed: ${r.status}`);
-      const blob = await r.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `arrivals_${runId}.yaml`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  }
+  // SimOS arrivals contract: the winning forecast as SimOS arrivals. The
+  // hand-off panel asks what one number means and shows the converted orders
+  // per hour before the download (customer journey C-01).
+  const [showSimos, setShowSimos] = useState(false);
 
   // Sub-Premium handed-off key → clean pre-gate instead of the runnable form.
   if (access === "gated") {
@@ -604,8 +587,16 @@ export default function LeaderboardView({ token = "" }: { token?: string }) {
           receipt={receipt}
           onFetchReceipt={fetchReceipt}
           onDownloadXlsx={downloadXlsx}
-          onDownloadYaml={downloadArrivalsYaml}
+          onToggleSimos={() => setShowSimos((v) => !v)}
+          simosOpen={showSimos}
         />
+      )}
+      {result && showSimos && runId && (
+        <div style={{ marginTop: 12 }}>
+          <SimosHandoffPanel
+            source={{ kind: "leaderboard", apiBase: API_BASE, runId, headers: () => authHeaders() }}
+          />
+        </div>
       )}
     </section>
   );
@@ -616,13 +607,15 @@ function Results({
   receipt,
   onFetchReceipt,
   onDownloadXlsx,
-  onDownloadYaml,
+  onToggleSimos,
+  simosOpen,
 }: {
   result: LeaderboardResult;
   receipt: { calibration_id: string; signature: string } | null;
   onFetchReceipt: () => void;
   onDownloadXlsx: () => void;
-  onDownloadYaml: () => void;
+  onToggleSimos: () => void;
+  simosOpen: boolean;
 }) {
   const winnerEntry = result.entries.find((e) => e.method_id === result.winner_method_id);
   return (
@@ -751,8 +744,9 @@ function Results({
           ⬇ Download Excel
         </button>
         <button
-          onClick={onDownloadYaml}
-          title="Download the winning forecast as a SimOS arrivals.schedule YAML (the DSO→SimOS contract SimOS consumes directly)"
+          onClick={onToggleSimos}
+          aria-expanded={simosOpen}
+          title="Convert the winning forecast into SimOS arrivals (orders per hour) and download it for SimOS Builder"
           style={{
             padding: "5px 12px",
             fontSize: "0.78rem",
@@ -764,7 +758,7 @@ function Results({
             fontWeight: 700,
           }}
         >
-          ⬇ SimOS YAML
+          {simosOpen ? "Hide SimOS hand-off" : "Send to SimOS"}
         </button>
       </div>
       {receipt && (

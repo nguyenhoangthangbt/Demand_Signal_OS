@@ -25,6 +25,8 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, PrivateAttr, model_validator
 
+from demand_signal_os.api.simos_export import SimosHandoff
+
 router = APIRouter(tags=["forecast"])
 
 _MAX_HISTORY = 520  # ~10y weekly / ~1.4y daily — bounds per-call compute
@@ -76,6 +78,19 @@ class SingleForecastRequest(BaseModel):
     def settings(self) -> dict[str, Any]:
         """The concrete settings used and where they came from (for the UI)."""
         return dict(self._settings)
+
+
+class SimosExportRequest(SingleForecastRequest):
+    """A forecast request plus the hand-off basis for the SimOS export.
+
+    ``handoff`` states what one number in ``history`` means (period length,
+    orders or units, operating hours). The workbench always sends it, after the
+    customer has confirmed the converted rate; when an API caller omits it, the
+    old reading applies (each value is orders per ``bucket_period`` on a 24 h,
+    7 day calendar) and the YAML header says so.
+    """
+
+    handoff: SimosHandoff | None = None
 
 
 def _build_actuals(body: SingleForecastRequest) -> list[Any]:
@@ -190,12 +205,8 @@ async def single_forecast_xlsx(body: SingleForecastRequest) -> StreamingResponse
     )
 
 
-@router.post("/forecast/single.yaml")
-async def single_forecast_arrivals_yaml(body: SingleForecastRequest) -> StreamingResponse:
-    """The DSO→SimOS contract for this forecast: a SimOS ``arrivals.schedule``
-    YAML block (one entry per horizon step) that SimOS consumes directly. Humans
-    audit the .xlsx; SimOS ingests this YAML."""
-    from demand_signal_os.api.simos_export import forecast_to_simos_arrivals_yaml
+def _fit_for_export(body: SingleForecastRequest) -> tuple[Any, list[Any]]:
+    """Winner bundle + per-step path for the SimOS exports (clean 422 on failure)."""
     from demand_signal_os.leaderboard import fit_winner_bundle, forecast_path
 
     actuals = _build_actuals(body)
@@ -209,9 +220,37 @@ async def single_forecast_arrivals_yaml(body: SingleForecastRequest) -> Streamin
             detail=f"forecast failed for method '{body.method_id}': "
                    f"{type(exc).__name__}: {exc}",
         ) from exc
+    return winner_bundle, path
+
+
+@router.post("/forecast/single.simos.preview")
+async def single_forecast_simos_preview(body: SimosExportRequest) -> dict[str, Any]:
+    """What the SimOS export will contain under the stated hand-off basis: per
+    period, the forecast median and the converted orders per operating hour,
+    plus one sentence stating the conversion. The workbench shows this for the
+    customer to confirm before any SimOS download (customer journey C-01)."""
+    from demand_signal_os.api.simos_export import simos_handoff_preview
+
+    winner_bundle, path = _fit_for_export(body)
+    return simos_handoff_preview(
+        winner_bundle, path, bucket_period=body.bucket_period,
+        start_date=body.start_date, handoff=body.handoff,
+    )
+
+
+@router.post("/forecast/single.yaml")
+async def single_forecast_arrivals_yaml(body: SimosExportRequest) -> StreamingResponse:
+    """The DSO→SimOS contract for this forecast: a SimOS ``arrivals.schedule``
+    YAML block (one entry per horizon step) that SimOS consumes directly. Humans
+    audit the .xlsx; SimOS ingests this YAML. ``handoff`` sets the conversion
+    from demand per period to orders per operating hour."""
+    from demand_signal_os.api.simos_export import forecast_to_simos_arrivals_yaml
+
+    winner_bundle, path = _fit_for_export(body)
     text = forecast_to_simos_arrivals_yaml(
         winner_bundle, path,
         bucket_period=body.bucket_period, start_date=body.start_date,
+        handoff=body.handoff,
     )
     return StreamingResponse(
         io.BytesIO(text.encode("utf-8")),
@@ -221,28 +260,18 @@ async def single_forecast_arrivals_yaml(body: SingleForecastRequest) -> Streamin
 
 
 @router.post("/forecast/single.simos.xlsx")
-async def single_forecast_arrivals_xlsx(body: SingleForecastRequest) -> StreamingResponse:
+async def single_forecast_arrivals_xlsx(body: SimosExportRequest) -> StreamingResponse:
     """The DSO->SimOS arrivals contract as a list-valued xlsx: the same "Arrival
     Schedule" shape SimOS's excel-builder accepts (declares distribution=schedule
     + one row per horizon step). This is the primitive contract SimOS imports to
-    overwrite a scenario's arrivals."""
+    overwrite a scenario's arrivals. ``handoff`` sets the rate conversion."""
     from demand_signal_os.api.simos_export import forecast_to_simos_arrivals_xlsx
-    from demand_signal_os.leaderboard import fit_winner_bundle, forecast_path
 
-    actuals = _build_actuals(body)
-    cfg = _build_config(body)
-    try:
-        winner_bundle = fit_winner_bundle(actuals, cfg, body.method_id)
-        path = forecast_path(actuals, cfg, body.method_id)
-    except Exception as exc:  # noqa: BLE001 — clean 422, not a 500
-        raise HTTPException(
-            status_code=422,
-            detail=f"forecast failed for method '{body.method_id}': "
-                   f"{type(exc).__name__}: {exc}",
-        ) from exc
+    winner_bundle, path = _fit_for_export(body)
     xlsx = forecast_to_simos_arrivals_xlsx(
         winner_bundle, path,
         bucket_period=body.bucket_period, start_date=body.start_date,
+        handoff=body.handoff,
     )
     return StreamingResponse(
         io.BytesIO(xlsx),

@@ -46,6 +46,8 @@ def bundle_to_schedule_entry(
     *,
     t_seconds: float,
     noise_from_band: bool = True,
+    hours_per_bucket: float | None = None,
+    units_per_entity: float = 1.0,
 ) -> dict[str, float]:
     """Convert a single ForecastBundle into a single SimOS schedule entry.
 
@@ -75,7 +77,20 @@ def bundle_to_schedule_entry(
       rates by construction.
     - Any quantile NaN raises ``ValueError`` rather than producing a
       silent garbage noise_std.
+
+    Hand-off basis (2026-10-13, customer journey C-01): ``hours_per_bucket``
+    replaces the calendar bucket width with the OPERATING hours one forecast
+    value covers (a month at 16 h x 5 d is about 347.9 h, not 744 h), and
+    ``units_per_entity`` divides the forecast first (units per order), so a
+    forecast in units per month becomes SimOS orders per operating hour. Both
+    default to the old behaviour (calendar width, 1 unit = 1 entity).
     """
+    if hours_per_bucket is not None and (
+        not math.isfinite(hours_per_bucket) or hours_per_bucket <= 0
+    ):
+        raise ValueError(f"hours_per_bucket must be finite and > 0, got {hours_per_bucket!r}")
+    if not math.isfinite(units_per_entity) or units_per_entity <= 0:
+        raise ValueError(f"units_per_entity must be finite and > 0, got {units_per_entity!r}")
     # Input validation — t_seconds must be a forward, finite offset.
     if not math.isfinite(t_seconds):
         raise ValueError(f"t_seconds must be finite, got {t_seconds!r}")
@@ -89,7 +104,10 @@ def bundle_to_schedule_entry(
             f"(sku={bundle.sku_id}, location={bundle.location_id})"
         )
 
-    bucket_hours = _bucket_seconds(bundle) / 3600.0
+    bucket_hours = (
+        float(hours_per_bucket) if hours_per_bucket is not None
+        else _bucket_seconds(bundle) / 3600.0
+    )
     if bucket_hours <= 0 or not math.isfinite(bucket_hours):
         raise ValueError(
             f"bundle bucket has non-positive or non-finite duration: "
@@ -97,7 +115,7 @@ def bundle_to_schedule_entry(
         )
 
     # Clip negative mean to 0 — explicit floor.
-    safe_mean = max(float(bundle.mean), 0.0)
+    safe_mean = max(float(bundle.mean), 0.0) / float(units_per_entity)
     rate_per_hour = safe_mean / bucket_hours
 
     entry: dict[str, float] = {
@@ -116,7 +134,7 @@ def bundle_to_schedule_entry(
                 )
         # IQR / 1.349 = Gaussian-equivalent sigma per textbook convention
         iqr = q.q75 - q.q25
-        noise = max(iqr / 1.349, 0.0) / bucket_hours
+        noise = max(iqr / 1.349, 0.0) / float(units_per_entity) / bucket_hours
         # Clip noise so SimOS's normal-around-rate doesn't draw negatives.
         # rate - 3*noise > 0  =>  noise < rate / 3
         # When rate is 0 (no arrivals expected), force noise to 0 so the
@@ -131,6 +149,8 @@ def forecast_bundles_to_simos_schedule(
     *,
     noise_from_band: bool = True,
     cycle_duration_seconds: float | None = None,
+    hours_per_bucket: float | None = None,
+    units_per_entity: float = 1.0,
 ) -> dict[str, object]:
     """Convert a sequence of ForecastBundles into a SimOS arrivals block.
 
@@ -145,6 +165,12 @@ def forecast_bundles_to_simos_schedule(
             marked as cyclic (the schedule restarts after this many
             seconds). When None (default), the schedule is treated as
             single-pass.
+        hours_per_bucket: Operating hours one bucket covers. When set, the
+            schedule runs on an OPERATING clock: entry ``i`` starts at
+            ``i * hours_per_bucket`` hours and its rate is per operating
+            hour. When None (default), the calendar bucket width is used.
+        units_per_entity: Forecast units per SimOS entity (for example
+            units per order). Defaults to 1.
 
     Returns:
         A dict matching SimOS's arrivals block:
@@ -188,11 +214,15 @@ def forecast_bundles_to_simos_schedule(
     # Build schedule entries relative to t=0 at the first bucket's start
     base = datetime.combine(bundle_list[0].bucket.start, datetime.min.time())
     schedule: list[dict[str, float]] = []
-    for b in bundle_list:
-        start = datetime.combine(b.bucket.start, datetime.min.time())
-        t = (start - base).total_seconds()
+    for i, b in enumerate(bundle_list):
+        if hours_per_bucket is not None:
+            t = i * float(hours_per_bucket) * 3600.0
+        else:
+            start = datetime.combine(b.bucket.start, datetime.min.time())
+            t = (start - base).total_seconds()
         schedule.append(bundle_to_schedule_entry(
-            b, t_seconds=float(t), noise_from_band=noise_from_band
+            b, t_seconds=float(t), noise_from_band=noise_from_band,
+            hours_per_bucket=hours_per_bucket, units_per_entity=units_per_entity,
         ))
 
     out: dict[str, object] = {
