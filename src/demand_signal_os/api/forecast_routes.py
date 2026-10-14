@@ -17,13 +17,13 @@ fixed), never the wall clock, so the same request yields a byte-identical band.
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, time, timedelta
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 import io
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PrivateAttr, model_validator
 
 router = APIRouter(tags=["forecast"])
 
@@ -44,14 +44,38 @@ class SingleForecastRequest(BaseModel):
     # Fixed default keeps the run deterministic (RULE 5) for the preview.
     start_date: date = date(2026, 1, 1)
     horizon: int = Field(default=12, ge=1, le=_MAX_HORIZON)
-    season_length: int = Field(default=7, ge=1)
+    # A number, or "auto" to infer the cycle from the data (C-05: a hardcoded
+    # 7 forecast a Q4-peaked monthly series flat). Default stays 7 so existing
+    # callers get byte-identical output.
+    season_length: Annotated[int, Field(ge=1)] | Literal["auto"] = 7
     intermittent_mode: Literal["auto", "on", "off"] = "auto"
+    # A registered method id, or "auto": ETS, falling back to CES when ETS
+    # cannot fit the (detected) cycle from this much history.
     method_id: str = "ets"
     seed: int = 42
     # When true, also return per-step quantiles (h=1..horizon) so the caller can
     # draw the widening band. Each step is a terminal-horizon fit, so this is
     # ``horizon`` fits; bounded by _MAX_BAND to keep the preview snappy.
     band: bool = False
+
+    _settings: dict[str, Any] = PrivateAttr(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _resolve_auto(self) -> "SingleForecastRequest":
+        """Resolve "auto" season / method to concrete values ONCE, at the edge,
+        so every endpoint sharing this model (band, xlsx, SimOS exports) fits
+        the same settings. Explicit values pass through unchanged."""
+        from demand_signal_os.forecasting.seasonality import resolve_forecast_settings
+
+        settings = resolve_forecast_settings(self.history, self.season_length, self.method_id)
+        self.season_length = settings.season_length
+        self.method_id = settings.method_id
+        self._settings = settings.as_dict()
+        return self
+
+    def settings(self) -> dict[str, Any]:
+        """The concrete settings used and where they came from (for the UI)."""
+        return dict(self._settings)
 
 
 def _build_actuals(body: SingleForecastRequest) -> list[Any]:
@@ -112,6 +136,7 @@ def _compute_forecast(body: SingleForecastRequest) -> dict[str, Any]:
         out: dict[str, Any] = {
             "method": body.method_id,
             "bundle": bundle.model_dump(mode="json"),
+            "settings": body.settings(),
         }
         if body.band:
             from demand_signal_os.leaderboard import forecast_path
