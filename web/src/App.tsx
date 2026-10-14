@@ -10,12 +10,13 @@
 // → fill → upload + validate → run → see synthetic forecast band +
 // drift signal.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import LeaderboardView from "./LeaderboardView";
 import VerifyView from "./VerifyView";
 import IdentityBadge from "./IdentityBadge";
 import { writeSsoCookie, clearSsoCookie } from "./sso";
 import { site } from "./lib/site";
+import { chartFrame, labelAnchor } from "./lib/chartFrame";
 
 // The self-serve site (sim-os.ai) sells DSO in Premium; Order2Cash, P2C and
 // the P2C Excel template hub are Enterprise and live on plan2cash.com only.
@@ -308,7 +309,8 @@ function Hero() {
         <span
           style={{
             display: "inline-block",
-            fontSize: isMobile ? "0.6rem" : "0.65rem",
+            // 11.2 px on a phone (was 9.6 px, audit D-08).
+            fontSize: isMobile ? "0.7rem" : "0.65rem",
             padding: "2px 8px",
             backgroundColor: PALETTE.warnBg,
             color: PALETTE.warn,
@@ -624,7 +626,8 @@ function LeaderboardSection() {
                       <span
                         className="dso-lb-badge"
                         style={{
-                          fontSize: "0.58rem",
+                          // 11.2 px on a phone (was 9.3 px, audit D-08).
+                          fontSize: isMobile ? "0.7rem" : "0.58rem",
                           fontWeight: 700,
                           letterSpacing: "0.08em",
                           color: PALETTE.warn,
@@ -1167,6 +1170,16 @@ function ForecastPreview({ series }: { series?: number[] | null }) {
   const [hover, setHover] = useState<number | null>(null);
   const [usingUpload, setUsingUpload] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Draw at the real rendered width on a phone so labels stay readable (D-08).
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [svgPx, setSvgPx] = useState<number | null>(null);
+  useEffect(() => {
+    const el = svgRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => setSvgPx(el.getBoundingClientRect().width));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   const runForecast = (hist: number[]) => {
     setErr(null);
@@ -1215,9 +1228,8 @@ function ForecastPreview({ series }: { series?: number[] | null }) {
 
   const total = HISTORY.length + FORECAST.length;
   const maxY = Math.ceil(Math.max(160, ...HISTORY, ...FORECAST.map((f) => f.q95)) * 1.05);
-  const padding = { top: 20, right: 16, bottom: 26, left: 32 };
-  const w = 720;
-  const h = 280;
+  const frame = chartFrame(svgPx);
+  const { padding, w, h } = frame;
   const innerW = w - padding.left - padding.right;
   const innerH = h - padding.top - padding.bottom;
   const xStep = innerW / (total - 1);
@@ -1517,7 +1529,7 @@ function ForecastPreview({ series }: { series?: number[] | null }) {
           padding: "1rem",
         }}
       >
-        <svg width="100%" height={h} viewBox={`0 0 ${w} ${h}`} style={{ display: "block" }}>
+        <svg ref={svgRef} width="100%" height={h} viewBox={`0 0 ${w} ${h}`} style={{ display: "block" }}>
           {[0, 40, 80, 120, 160].map((v) => (
             <g key={v}>
               <line
@@ -1532,7 +1544,7 @@ function ForecastPreview({ series }: { series?: number[] | null }) {
                 x={padding.left - 6}
                 y={yScale(v) + padding.top + 3}
                 fill={PALETTE.textDim}
-                fontSize={9}
+                fontSize={frame.font}
                 textAnchor="end"
               >
                 {v}
@@ -1548,14 +1560,21 @@ function ForecastPreview({ series }: { series?: number[] | null }) {
             strokeDasharray="3 3"
             strokeWidth={0.7}
           />
-          <text
-            x={(HISTORY.length - 1) * xStep + padding.left + 4}
-            y={padding.top + 10}
-            fill={PALETTE.textDim}
-            fontSize={9}
-          >
-            history → forecast
-          </text>
+          {(() => {
+            const bx = (HISTORY.length - 1) * xStep + padding.left;
+            const anchor = labelAnchor(bx, "history → forecast", frame);
+            return (
+              <text
+                x={anchor === "start" ? bx + 4 : bx - 4}
+                y={padding.top + 10}
+                fill={PALETTE.textDim}
+                fontSize={frame.font}
+                textAnchor={anchor}
+              >
+                history → forecast
+              </text>
+            );
+          })()}
           <polygon points={bandPoints} fill={PALETTE.band} fillOpacity={0.18} />
           <path d={historyPath} fill="none" stroke={PALETTE.textMuted} strokeWidth={1.5} />
           <path
@@ -1591,7 +1610,7 @@ function ForecastPreview({ series }: { series?: number[] | null }) {
             <text
               x={hover * xStep + padding.left}
               y={yScale(HISTORY[hover]) + padding.top - 8}
-              fontSize={10}
+              fontSize={frame.hover}
               fill={PALETTE.text}
               textAnchor="middle"
             >
@@ -1602,12 +1621,12 @@ function ForecastPreview({ series }: { series?: number[] | null }) {
             <text
               x={hover * xStep + padding.left}
               y={yScale(FORECAST[hover - HISTORY.length].q50) + padding.top - 8}
-              fontSize={10}
+              fontSize={frame.hover}
               fill={PALETTE.median}
               textAnchor="middle"
             >
               {FORECAST[hover - HISTORY.length].q50}
-              <tspan fill={PALETTE.textDim} fontSize={8}>
+              <tspan fill={PALETTE.textDim} fontSize={frame.small}>
                 {` (${FORECAST[hover - HISTORY.length].q05}-${FORECAST[hover - HISTORY.length].q95})`}
               </tspan>
             </text>
