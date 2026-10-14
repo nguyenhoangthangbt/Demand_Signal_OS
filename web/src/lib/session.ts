@@ -7,7 +7,8 @@
 // cookie, not in a URL. Engine calls send the cookie (credentials: include)
 // and X-Requested-With: mao on writes (the engines' CSRF rule).
 //
-// When MAO /auth is off (404 while MAO_SESSION_SEAL_KEY is unset) or
+// When MAO /auth is off (MAO_SESSION_SEAL_KEY unset: GET /auth/session
+// answers 200 {"enabled": false}, an older MAO answered 404) or
 // unreachable, everything falls back to today's bearer flow. The probe at
 // boot decides at runtime; there is no build-time switch.
 //

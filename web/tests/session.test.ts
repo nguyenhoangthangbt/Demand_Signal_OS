@@ -167,6 +167,17 @@ test("boot, session on: a dead key signs out and clears every copy", async () =>
   assert.equal(sso.value, "");
 });
 
+test("probe and boot, /auth off (200 enabled:false): bearer, the same as a 404", async () => {
+  const f = fakeFetch({ [`GET ${BASE}/auth/session`]: 200 }, { enabled: false, authenticated: false });
+  assert.deepEqual(await probeSession(BASE, f.fn), { mode: "bearer" });
+  const g = deps({ fetch: f.fn });
+  g.sso.value = "mao_live_k";
+  assert.equal(await bootSession(g.d), "mao_live_k");
+  assert.equal(g.store.get("dso_token_v1"), "mao_live_k");
+  assert.equal(sessionMode(), "bearer");
+  assert.ok(f.calls.every((c) => (c.init.method ?? "GET").toUpperCase() === "GET"), "no sign-in POST");
+});
+
 test("boot, /auth off (404): today's bearer flow, key adopted from mao_sso", async () => {
   const f = fakeFetch({ [`GET ${BASE}/auth/session`]: 404 });
   const { d, store, sso } = deps({ fetch: f.fn });
