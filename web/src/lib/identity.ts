@@ -23,6 +23,16 @@ export function customerPlanName(tier: string | null | undefined): string | null
   return PLAN_NAMES[(tier ?? "").trim().toLowerCase()] ?? null;
 }
 
+/** Name and plan as separate parts (either may be null); null when both are. */
+export function identityParts(
+  who: WhoAmI | null | undefined,
+): { name: string | null; plan: string | null } | null {
+  if (!who) return null;
+  const name = (who.name ?? "").trim() || null;
+  const plan = customerPlanName(who.tier);
+  return name || plan ? { name, plan } : null;
+}
+
 /** "Name | Plan", "Name" or "Plan"; null when there is nothing to show. */
 export function identityLabel(who: WhoAmI | null | undefined): string | null {
   if (!who) return null;

@@ -29,3 +29,25 @@ test("the header badge renders identityLabel and never shows the role", () => {
   assert.match(src, /identityLabel\(/);
   assert.doesNotMatch(src, /role\.toUpperCase|\.role\b|setRole/);
 });
+
+// UAT 2026-10-14 F2: at 390 px the chip "Smoke premium | Premium" ran to
+// x=444 and clipped the plan. The plan is the part that must always show; the
+// name truncates with an ellipsis, and on a phone the name is dropped.
+test("identityParts splits name and plan so the plan never truncates", async () => {
+  const { identityParts } = await import("../src/lib/identity.ts");
+  assert.deepEqual(identityParts({ name: "Smoke premium", role: "x", tier: "premium" }), { name: "Smoke premium", plan: "Premium" });
+  assert.deepEqual(identityParts({ name: null, role: null, tier: "free" }), { name: null, plan: "Free" });
+  assert.deepEqual(identityParts({ name: "A", role: null, tier: "internal" }), { name: "A", plan: null });
+  assert.equal(identityParts({ name: " ", role: null, tier: null }), null);
+  assert.equal(identityParts(null), null);
+});
+
+test("the header fits a phone: compact badge, wrapping nav, truncating name", () => {
+  const badge = readFileSync(join(here, "../src/IdentityBadge.tsx"), "utf8");
+  assert.match(badge, /compact/);
+  assert.match(badge, /textOverflow: "ellipsis"/);
+  const app = readFileSync(join(here, "../src/App.tsx"), "utf8");
+  assert.match(app, /<IdentityBadge token=\{token\} compact=\{isMobile\} \/>/);
+  const header = app.slice(app.indexOf("function Header("), app.indexOf("function Hero("));
+  assert.match(header, /flexWrap: "wrap"[^}]*minWidth: 0/s);
+});
