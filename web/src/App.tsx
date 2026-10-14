@@ -14,6 +14,7 @@ import { useEffect, useState } from "react";
 import LeaderboardView from "./LeaderboardView";
 import VerifyView from "./VerifyView";
 import IdentityBadge from "./IdentityBadge";
+import SimosHandoffPanel from "./SimosHandoffPanel";
 import { writeSsoCookie, clearSsoCookie } from "./sso";
 import { site } from "./lib/site";
 
@@ -1305,59 +1306,10 @@ function ForecastPreview({ series }: { series?: number[] | null }) {
       .catch((e) => setErr(String(e?.message ?? e)));
   };
 
-  // SimOS arrivals contract: the same forecast as a SimOS-consumable
-  // arrivals.schedule YAML (humans audit the .xlsx, SimOS ingests this YAML).
-  const downloadForecastYaml = () => {
-    fetch(`${DSO_API}/forecast/single.yaml`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        history: HISTORY,
-        horizon: 8,
-        season_length: 7,
-        method_id: "ets",
-      }),
-    })
-      .then((r) => (r.ok ? r.blob() : Promise.reject(new Error(`HTTP ${r.status}`))))
-      .then((blob) => {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = "dso_arrivals.yaml";
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(url);
-      })
-      .catch((e) => setErr(String(e?.message ?? e)));
-  };
-
-  // The list-valued arrivals contract as a SimOS-importable xlsx: SimOS's
-  // excel-builder overlay accepts this to overwrite a scenario's arrivals.
-  const downloadForecastSimosXlsx = () => {
-    fetch(`${DSO_API}/forecast/single.simos.xlsx`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        history: HISTORY,
-        horizon: 8,
-        season_length: 7,
-        method_id: "ets",
-      }),
-    })
-      .then((r) => (r.ok ? r.blob() : Promise.reject(new Error(`HTTP ${r.status}`))))
-      .then((blob) => {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = "dso_simos_arrivals.xlsx";
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(url);
-      })
-      .catch((e) => setErr(String(e?.message ?? e)));
-  };
+  // "Send to SimOS" opens the hand-off panel: the customer states what one
+  // number means (day, week or month; orders or units; operating hours), sees
+  // the converted orders per hour, and only then downloads (journey C-01).
+  const [showSimos, setShowSimos] = useState(false);
 
   return (
     <section style={{ padding: "0 1.5rem 1.25rem", maxWidth: 900, margin: "0 auto" }}>
@@ -1466,28 +1418,10 @@ function ForecastPreview({ series }: { series?: number[] | null }) {
           ⬇ Download Excel
         </button>
         <button
-          onClick={downloadForecastYaml}
+          onClick={() => setShowSimos((v) => !v)}
           disabled={FORECAST.length === 0}
-          title="Download the forecast as a SimOS arrivals.schedule YAML (the DSO→SimOS contract SimOS consumes directly)"
-          style={{
-            padding: "8px 14px",
-            fontSize: "0.8rem",
-            fontWeight: 600,
-            color: PALETTE.text,
-            backgroundColor: "transparent",
-            border: `1px solid ${PALETTE.border}`,
-            borderRadius: 6,
-            cursor: FORECAST.length === 0 ? "not-allowed" : "pointer",
-            opacity: FORECAST.length === 0 ? 0.5 : 1,
-            whiteSpace: "nowrap",
-          }}
-        >
-          ⬇ SimOS YAML
-        </button>
-        <button
-          onClick={downloadForecastSimosXlsx}
-          disabled={FORECAST.length === 0}
-          title="Download the forecast as a SimOS-importable arrivals xlsx (the list-valued contract SimOS's excel-builder overlay accepts)"
+          aria-expanded={showSimos}
+          title="Convert this forecast into SimOS arrivals (orders per hour) and download it for SimOS Builder"
           style={{
             padding: "8px 14px",
             fontSize: "0.8rem",
@@ -1501,9 +1435,18 @@ function ForecastPreview({ series }: { series?: number[] | null }) {
             whiteSpace: "nowrap",
           }}
         >
-          ⬇ SimOS arrivals (xlsx)
+          {showSimos ? "Hide SimOS hand-off" : "Send to SimOS"}
         </button>
       </div>
+      {showSimos && FORECAST.length > 0 && (
+        <SimosHandoffPanel
+          source={{
+            kind: "series",
+            apiBase: DSO_API,
+            body: { history: HISTORY, horizon: 8, season_length: 7, method_id: "ets" },
+          }}
+        />
+      )}
       {err && (
         <p style={{ margin: "0 0 12px 0", fontSize: "0.8rem", color: PALETTE.warn }}>
           Live forecast unavailable ({err}); showing history only.

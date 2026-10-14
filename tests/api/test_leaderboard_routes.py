@@ -130,6 +130,29 @@ def test_arrivals_yaml_is_simos_consumable(client: TestClient, completed_run: st
     assert [e["time"] for e in schedule] == sorted(e["time"] for e in schedule)
 
 
+def test_arrivals_handoff_preview_matches_yaml(client: TestClient, completed_run: str) -> None:
+    """Journey C-01: the leaderboard SimOS export honours the stated basis, and
+    the preview shows exactly the rates the YAML carries."""
+    import yaml
+
+    q = ("data_frequency=month&demand_unit=units&units_per_order=2"
+         "&operating_hours_per_day=16&operating_days_per_week=5")
+    prev = client.get(f"/api/v1/forecast/leaderboard/{completed_run}/arrivals.preview?{q}")
+    assert prev.status_code == 200, prev.text
+    p = prev.json()
+    assert abs(p["hours_per_period"] - 16 * 5 * (365.25 / 12) / 7) < 1e-9
+    first = p["steps"][0]
+    assert abs(first["rate_per_hour"] - first["forecast_median"] / 2 / p["hours_per_period"]) < 1e-9
+    resp = client.get(f"/api/v1/forecast/leaderboard/{completed_run}/arrivals.yaml?{q}")
+    sched = yaml.safe_load(resp.text)["sources"][0]["arrivals"]["schedule"]
+    assert [e["rate_per_hour"] for e in sched] == [s["rate_per_hour"] for s in p["steps"]]
+    assert "units per month" in resp.text
+    bad = client.get(f"/api/v1/forecast/leaderboard/{completed_run}/arrivals.preview"
+                     "?data_frequency=month&operating_hours_per_day=30")
+    assert bad.status_code == 422
+    assert "hours a day 0 to 24" in bad.json()["detail"]
+
+
 def test_receipt_is_signed(client: TestClient, completed_run: str) -> None:
     resp = client.get(f"/api/v1/forecast/leaderboard/{completed_run}/receipt")
     assert resp.status_code == 200
