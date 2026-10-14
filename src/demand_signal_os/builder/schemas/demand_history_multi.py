@@ -202,8 +202,8 @@ DEMAND_HISTORY_MULTI_SCHEMA: WorkbookSpec = WorkbookSpec(
                         "1. Fill Settings (applies to every SKU in this workbook). "
                         "2. Add one row per SKU+location pair on the sku_index tab. "
                         "3. Add observation rows on the observations tab; (sku_id, location_id) must match a sku_index row. "
-                        "4. Upload to plan2cash.sim-os.ai/#/app for validation - every (sku_id, location_id) returns a per-SKU validation report. "
-                        "5. v0.1.x validates the schema; v0.2 wires per-SKU forecast emission keyed on the identity tuple."
+                        "4. Save the file and upload it on the Templates tab in P2C to validate it; every (sku_id, location_id) gets its own validation report. "
+                        "5. This file is validated only. To forecast, use the demand_history template, one SKU and location per file."
                     ),
                     cell="B3",
                     field_type="str",
