@@ -132,6 +132,16 @@ Reference: Bracher, J., Ray, E.L., Gneiting, T. & Reich, N.G. (2021), "Evaluatin
 
 Implemented in `backtest/metrics.py` as `def wis(quantiles: Quantiles, actual: float, alphas: list[float]) -> float`. Reported in backtest summary tables, not in production `ForecastAccuracy` records.
 
+### 5.1 Interval calibration flag (leaderboard, 2026-10-13)
+
+Each leaderboard entry carries `interval_calibration`, and the result carries `winner_interval_calibration`, derived from the empirical coverage of the backtest windows with the same 0.15 tolerance the signed receipt's coverage check uses (`leaderboard/orchestrator.py::interval_calibration`):
+
+- `too_narrow`: 90% band coverage under 0.75, or 50% band coverage under 0.35.
+- `too_wide`: 50% band coverage over 0.85.
+- `ok` otherwise; `unknown` when coverage was not measured.
+
+The flag is display only. It does not change ranking, the winner, or `content_hash`, so published golden numbers stay reproducible. The UI shows a winner that beats naive but is `too_narrow` as a caution, not a clean win (audit findings C-09, F-21).
+
 ---
 
 ## 6. Reporting

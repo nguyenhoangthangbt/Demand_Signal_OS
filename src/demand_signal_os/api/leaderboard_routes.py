@@ -126,6 +126,31 @@ def _build_config(body: LeaderboardRunRequest) -> Any:
     return LeaderboardConfig(**kwargs)
 
 
+def history_shortfall_message(n_points: int, min_train_size: int, horizon: int) -> str | None:
+    """Plain-language reason a series is too short for the backtest, or None.
+
+    The walk-forward harness needs ``min_train_size`` periods to train on plus
+    ``horizon`` periods to score against (``backtest.harness.make_windows``).
+    Before this check a short series surfaced the raw Python
+    ``ValueError: history_length 24 too small for ...`` (audit finding C-07).
+    """
+    needed = min_train_size + horizon
+    if n_points >= needed:
+        return None
+    return (
+        f"Your history has {n_points} periods, and this run needs at least "
+        f"{needed}: {min_train_size} to train on plus {horizon} to test the "
+        "forecast against. Add more history, shorten the horizon, or use a "
+        "shorter season length."
+    )
+
+
+_FAILED_RUN_MESSAGE = (
+    "The leaderboard could not finish on this series. Try a shorter horizon, "
+    "a shorter season length or fewer backtest windows."
+)
+
+
 def _execute(run_id: str, body: LeaderboardRunRequest) -> None:
     """Background worker — runs the orchestrator and stores the result.
 
@@ -142,14 +167,32 @@ def _execute(run_id: str, body: LeaderboardRunRequest) -> None:
         result = orchestrate(actuals, config)
         _RUNS[run_id].update(status="complete", result=result)
     except Exception as exc:  # noqa: BLE001 — surface any engine failure to the client
-        _RUNS[run_id].update(status="failed", error=f"{type(exc).__name__}: {exc}")
+        # Customers see a plain sentence; the technical reason is kept for
+        # support in ``error_detail`` (never a raw Python error on screen).
+        shortfall = history_shortfall_message(
+            len(body.history), body.min_train_size, body.horizon
+        )
+        _RUNS[run_id].update(
+            status="failed",
+            error=shortfall or _FAILED_RUN_MESSAGE,
+            error_detail=f"{type(exc).__name__}: {exc}",
+        )
 
 
 @router.post("/forecast/leaderboard")
 async def submit_leaderboard(
     body: LeaderboardRunRequest, background: BackgroundTasks
 ) -> dict[str, Any]:
-    """Queue a leaderboard run. Idempotent: same request -> same run_id."""
+    """Queue a leaderboard run. Idempotent: same request -> same run_id.
+
+    A series too short for the backtest is refused up front with a 422 whose
+    ``detail`` is a plain sentence the UI can show as is (C-07).
+    """
+    shortfall = history_shortfall_message(
+        len(body.history), body.min_train_size, body.horizon
+    )
+    if shortfall is not None:
+        raise HTTPException(status_code=422, detail=shortfall)
     run_id = _run_id(body)
     existing = _RUNS.get(run_id)
     if existing is None or existing["status"] == "failed":

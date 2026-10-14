@@ -72,6 +72,12 @@ def forecast_to_xlsx(result: dict[str, Any], history: list[float]) -> bytes:
                "feature_set_hash", "data_cut_timestamp", "produced_at"):
         if prov.get(pk) is not None:
             p_rows.append([pk, prov[pk]])
+    # Settings actually used (season may be detected from the data, C-05).
+    for sk in ("season_length", "season_source", "season_strength",
+               "method_source", "note"):
+        sv = (result.get("settings") or {}).get(sk)
+        if sv not in (None, ""):
+            p_rows.append([f"settings.{sk}", sv])
     if result.get("band_truncated"):
         p_rows.append(["band_truncated", True])
     p_rows = [r for r in p_rows if r[1] is not None]
@@ -93,7 +99,7 @@ def forecast_to_xlsx(result: dict[str, Any], history: list[float]) -> bytes:
 _LEADERBOARD_COLS = (
     "rank", "method_id", "is_benchmark", "crps", "smape",
     "pinball_q50", "pinball_q90", "wis", "coverage_50", "coverage_90",
-    "beats_all_benchmarks", "n_windows",
+    "beats_all_benchmarks", "interval_calibration", "n_windows",
 )
 
 
