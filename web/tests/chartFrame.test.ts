@@ -5,7 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { chartFrame, labelAnchor, MIN_PHONE_LABEL_PX } from "../src/lib/chartFrame.ts";
+import { chartFrame, labelAnchor, plotPadding, MIN_PHONE_LABEL_PX } from "../src/lib/chartFrame.ts";
 
 const rendered = (frame: { w: number; font: number }, px: number) => (frame.font * px) / frame.w;
 
@@ -46,4 +46,34 @@ test("the live chart takes its canvas from chartFrame, not a fixed 720 x 280", (
   const app = readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8");
   assert.doesNotMatch(app, /const w = 720;/);
   assert.match(app, /chartFrame\(/);
+});
+
+// The y tick labels follow the data (C-06), so "4,000" is five characters. The
+// rotated "Units" title sits at x = 10 and needs about 16 units; a tick label
+// is right-aligned 6 units left of the plot and is about 0.6 em per character.
+const UNITS_TITLE = 16;
+const tickStart = (left: number, chars: number, font: number) => left - 6 - chars * font * 0.6;
+
+test("tick labels clear the Units title on a phone, also for 4-digit demand", () => {
+  for (const px of [308, 358, 500]) {
+    const f = chartFrame(px);
+    for (const chars of [1, 3, 5, 6]) {
+      const p = plotPadding(f, chars);
+      assert.ok(tickStart(p.left, chars, f.font) >= UNITS_TITLE, `${px} px, ${chars} chars: label starts at ${tickStart(p.left, chars, f.font)}`);
+      assert.ok(p.bottom >= 40, "room for the period labels and the axis title");
+    }
+  }
+  // The fixed 34-unit phone padding put "4,000" over the title (merge of j2-dso + j2-mobile).
+  assert.ok(tickStart(34, 5, 11) < UNITS_TITLE);
+});
+
+test("desktop keeps the j2-dso padding", () => {
+  for (const chars of [1, 3, 5]) {
+    assert.deepEqual(plotPadding(chartFrame(null), chars), { top: 20, right: 16, bottom: 40, left: 22 + chars * 6 });
+  }
+});
+
+test("the live chart takes its padding from plotPadding", () => {
+  const app = readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8");
+  assert.match(app, /plotPadding\(frame, tickLabelChars\)/);
 });

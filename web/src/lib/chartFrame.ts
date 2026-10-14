@@ -56,3 +56,18 @@ export function labelAnchor(x: number, text: string, f: ChartFrame): "start" | "
   const width = text.length * f.font * 0.6;
   return x + 4 + width > f.w - f.padding.right ? "end" : "start";
 }
+
+/**
+ * Plot padding for a chart whose y tick labels are up to `tickChars` long.
+ *
+ * Desktop keeps the tick-width padding tuned for its 9-unit labels (C-06). On a
+ * phone the labels are 11 units and follow the data too ("4,000"), so the left
+ * padding grows with them: the rotated Units title needs about 16 units, then a
+ * 6-unit gap, then the label at about 0.6 em per character. Both canvases keep
+ * 40 units at the bottom for the period labels and the axis title.
+ */
+export function plotPadding(f: ChartFrame, tickChars: number): ChartFrame["padding"] {
+  if (!f.phone) return { top: 20, right: 16, bottom: 40, left: 22 + tickChars * 6 };
+  const left = Math.max(f.padding.left, 22 + Math.ceil(tickChars * f.font * 0.6));
+  return { ...f.padding, bottom: 40, left };
+}

@@ -33,7 +33,7 @@ import {
   type ResolvedSettings,
 } from "./lib/forecastSettings";
 import GOLDEN_BOARD from "./goldenLeaderboard.json";
-import { chartFrame, labelAnchor } from "./lib/chartFrame";
+import { chartFrame, labelAnchor, plotPadding } from "./lib/chartFrame";
 
 // The self-serve site (sim-os.ai) sells DSO in Premium; Order2Cash, P2C and
 // the P2C Excel template hub are Enterprise and live on plan2cash.com only.
@@ -1261,14 +1261,11 @@ function ForecastPreview({ series }: { series?: number[] | null }) {
   const maxY = yTicks[yTicks.length - 1];
   const tickLabelChars = Math.max(...yTicks.map((t) => formatTick(t).length));
   // D-08: the canvas comes from chartFrame (the real rendered width on a
-  // phone, so a label of N units renders at N px). The tick-width left padding
-  // is tuned for the 9-unit desktop labels and applies on desktop only; both
-  // keep the 40-unit bottom for the period labels and the axis title.
+  // phone, so a label of N units renders at N px); the padding follows the
+  // tick labels on both canvases (plotPadding).
   const frame = chartFrame(svgPx);
   const { w, h } = frame;
-  const padding = frame.phone
-    ? { ...frame.padding, bottom: 40 }
-    : { top: 20, right: 16, bottom: 40, left: 22 + tickLabelChars * 6 };
+  const padding = plotPadding(frame, tickLabelChars);
   const innerW = w - padding.left - padding.right;
   const innerH = h - padding.top - padding.bottom;
   const xStep = innerW / Math.max(1, total - 1);
