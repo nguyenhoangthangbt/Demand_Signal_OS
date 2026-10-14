@@ -181,3 +181,15 @@ def test_leaderboard_arrivals_handoff_query_validation():
         _handoff_from_query("month", "orders", 1.0, 30.0, 7.0)
     assert exc.value.status_code == 422
     assert "hours a day 0 to 24" in exc.value.detail
+
+
+@pytest.mark.parametrize("origin", ["https://planning.sim-os.ai", "https://planning.plan2cash.com"])
+def test_planning_workbench_may_call_the_forecast(origin):
+    """PlanningOS "Use a DSO forecast" (journey C-03) calls /forecast/single
+    from the planning workbench in the browser; CORS must allow it."""
+    with _client() as c:
+        r = c.options("/api/v1/forecast/single", headers={
+            "Origin": origin, "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "content-type"})
+    assert r.status_code == 200
+    assert r.headers.get("access-control-allow-origin") == origin

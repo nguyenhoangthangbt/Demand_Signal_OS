@@ -33,6 +33,10 @@ _CORS_ORIGINS = [
     "https://demandsignal-api.sim-os.ai",
     "https://plan2cash.sim-os.ai",
     "https://plan2cash-api.sim-os.ai",
+    # PlanningOS "Use a DSO forecast" (journey finding C-03) calls
+    # /forecast/single from the planning workbench, on both public sites.
+    "https://planning.sim-os.ai",
+    "https://planning.plan2cash.com",
 ]
 
 
