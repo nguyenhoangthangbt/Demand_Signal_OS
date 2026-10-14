@@ -282,7 +282,18 @@ function Header({ token, onSignOut }: { token: string; onSignOut: () => void }) 
           </p>
         )}
       </div>
-      <nav style={{ display: "flex", gap: isMobile ? 8 : 12, alignItems: "center", flexShrink: 0 }}>
+      <nav
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          columnGap: isMobile ? 8 : 12,
+          rowGap: 4,
+          alignItems: "center",
+          flexShrink: 1,
+          minWidth: 0,
+          maxWidth: "100%",
+        }}
+      >
         <a
           href="#leaderboard"
           style={{ color: PALETTE.link, fontSize: isMobile ? "0.75rem" : "0.8rem", textDecoration: "none" }}
@@ -325,7 +336,7 @@ function Header({ token, onSignOut }: { token: string; onSignOut: () => void }) 
             Sign out
           </button>
         )}
-        <IdentityBadge token={token} />
+        <IdentityBadge token={token} compact={isMobile} />
       </nav>
     </header>
   );

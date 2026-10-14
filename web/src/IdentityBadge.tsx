@@ -8,7 +8,7 @@
 // half-empty chip. Styled to blend into the muted nav (small font, faint color).
 
 import { useEffect, useState } from "react";
-import { identityLabel, type WhoAmI } from "./lib/identity";
+import { identityLabel, identityParts, type WhoAmI } from "./lib/identity";
 import { authInit } from "./lib/session";
 
 // Same DSO API base the rest of App uses: same-origin "/api/v1" in dev,
@@ -20,7 +20,7 @@ const DSO_API: string =
 const TEXT_FAINT = "#64748b";
 const LINK = "#7dd3fc";
 
-export default function IdentityBadge({ token }: { token: string }) {
+export default function IdentityBadge({ token, compact = false }: { token: string; compact?: boolean }) {
   const [who, setWho] = useState<WhoAmI | null>(null);
 
   useEffect(() => {
@@ -47,11 +47,17 @@ export default function IdentityBadge({ token }: { token: string }) {
   // C-25 / F-23). Nothing to show until one of the two resolves. Fail-soft:
   // the endpoint returns all-null for an unrecognized key / MAO outage.
   const label = token ? identityLabel(who) : null;
-  if (!label) return null;
+  const parts = token ? identityParts(who) : null;
+  if (!label || !parts) return null;
+  // UAT 2026-10-14 F2: on a phone the chip ran past the viewport and clipped
+  // the plan. The plan never truncates; the name shrinks with an ellipsis and
+  // is dropped in compact (phone) mode when a plan is known.
+  const showName = parts.name && !(compact && parts.plan);
 
   return (
     <span
-      title="Signed-in account and plan"
+      title={label}
+      aria-label={`Signed in: ${label}`}
       style={{
         marginLeft: "auto",
         color: TEXT_FAINT,
@@ -60,13 +66,18 @@ export default function IdentityBadge({ token }: { token: string }) {
         display: "inline-flex",
         alignItems: "center",
         gap: 4,
+        minWidth: 0,
         maxWidth: "100%",
-        overflow: "hidden",
-        textOverflow: "ellipsis",
       }}
     >
-      <span style={{ color: LINK }}>●</span>
-      {label}
+      <span style={{ color: LINK, flexShrink: 0 }}>●</span>
+      {showName && (
+        <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", maxWidth: "14rem" }}>
+          {parts.name}
+        </span>
+      )}
+      {showName && parts.plan && <span style={{ flexShrink: 0 }}>|</span>}
+      {parts.plan && <span style={{ flexShrink: 0 }}>{parts.plan}</span>}
     </span>
   );
 }
