@@ -12,8 +12,13 @@
 
 import { useEffect, useState } from "react";
 import PremiumGate from "./PremiumGate";
+import SimosHandoffPanel from "./SimosHandoffPanel";
 import { readSsoCookie } from "./sso";
+import { authInit, isSessionToken } from "./lib/session";
 import { site } from "./lib/site";
+import { planBacktest } from "./lib/backtestPlan";
+import { gatedPlan } from "./lib/planCopy";
+import { winnerVerdict, type Calibration } from "./lib/winnerVerdict";
 
 const API_BASE: string =
   (import.meta.env.VITE_DSO_API_BASE as string | undefined) ?? "/api/v1";
@@ -39,6 +44,8 @@ const PALETTE = {
   okBg: "#14321f",
   okBorder: "#166534",
   warn: "#fcd34d",
+  warnBg: "#3f2f17",
+  warnBorder: "#854d0e",
   error: "#fca5a5",
   errorBg: "#3f1d1d",
   errorBorder: "#7f1d1d",
@@ -57,12 +64,14 @@ interface LeaderboardEntry {
   coverage_50: number | null;
   coverage_90: number | null;
   beats_all_benchmarks: boolean | null;
+  interval_calibration?: Calibration;
 }
 
 interface LeaderboardResult {
   entries: LeaderboardEntry[];
   winner_method_id: string;
   winner_is_benchmark: boolean;
+  winner_interval_calibration?: Calibration;
   n_methods: number;
   content_hash: string;
 }
@@ -182,10 +191,10 @@ export default function LeaderboardView({ token = "" }: { token?: string }) {
     const ctrl = new AbortController();
     // Fail-soft timeout: if whoami stalls, err OPEN rather than spin forever.
     const timer = window.setTimeout(() => ctrl.abort(), 6000);
-    fetch(`${API_BASE}/account/whoami`, {
-      headers: { "X-API-Key": token },
-      signal: ctrl.signal,
-    })
+    fetch(
+      `${API_BASE}/account/whoami`,
+      authInit(token, { headers: { "X-API-Key": token }, signal: ctrl.signal }),
+    )
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
       .then((d: { tier?: string | null }) => {
         const tier = (d.tier ?? "").toLowerCase();
@@ -214,11 +223,14 @@ export default function LeaderboardView({ token = "" }: { token?: string }) {
   // mao_sso cookie) so a signed-in user never has to re-paste a key. The
   // dual-accept gate (require_dso_access) takes a mao_live_ Bearer OR a
   // dso_live_ X-API-Key; authHeaders() routes by prefix.
-  const [apiKey, setApiKey] = useState<string>(() => token || readSsoCookie());
+  // P0-11 cookie mode: `token` is a session marker, never shown in the field;
+  // an empty field then runs on the session cookie (see credential()).
+  const prefill = () => (isSessionToken(token) ? "" : token || readSsoCookie());
+  const [apiKey, setApiKey] = useState<string>(prefill);
   useEffect(() => {
     // Adopt the handed-off session key if the field is still empty.
     if (!apiKey.trim()) {
-      const session = token || readSsoCookie();
+      const session = prefill();
       if (session) setApiKey(session);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -259,10 +271,15 @@ export default function LeaderboardView({ token = "" }: { token?: string }) {
     null,
   );
 
+  // A typed key wins; otherwise the signed-in session (cookie mode marker).
+  function credential(): string {
+    return apiKey.trim() || (isSessionToken(token) ? token : "");
+  }
+
   function authHeaders(json = false): Record<string, string> {
     const h: Record<string, string> = {};
-    const key = apiKey.trim();
-    if (key) {
+    const key = credential();
+    if (key && !isSessionToken(key)) {
       // Cross-engine SSO: a `mao_live_*` Enterprise tier-key authenticates via
       // platform_auth, which expects `Authorization: Bearer` — sending it as
       // `X-API-Key` 401s (mirrors O2C's frontend/src/api/auth.ts fix). Any other
@@ -283,7 +300,7 @@ export default function LeaderboardView({ token = "" }: { token?: string }) {
     setResult(null);
     setReceipt(null);
     // W-07: never a silent no-op — require a key (or sign-in) and say so.
-    const key = apiKey.trim();
+    const key = credential();
     if (!key) {
       setError(
         "Running the leaderboard needs an API key: sign in, " +
@@ -293,13 +310,16 @@ export default function LeaderboardView({ token = "" }: { token?: string }) {
       return;
     }
     const history = parseHistory(historyRaw);
-    if (history.length < seasonLength + horizon) {
-      setError(`Need at least ${seasonLength + horizon} data points; got ${history.length}.`);
+    // C-07: check the backtest fits BEFORE submitting, and say in plain words
+    // which settings would work (the engine used to fail with a raw ValueError).
+    const plan = planBacktest(history.length, seasonLength, horizon, nWindows);
+    if (!plan.ok) {
+      setError(plan.message);
       setStatus("failed");
       return;
     }
     try {
-      const submit = await fetch(`${API_BASE}/forecast/leaderboard`, {
+      const submit = await fetch(`${API_BASE}/forecast/leaderboard`, authInit(key, {
         method: "POST",
         headers: authHeaders(true),
         body: JSON.stringify({
@@ -313,21 +333,34 @@ export default function LeaderboardView({ token = "" }: { token?: string }) {
           intermittent_mode: intermittent,
           forecaster_set: forecasterSet,
           n_windows: nWindows,
-          min_train_size: Math.max(seasonLength * 2, history.length - nWindows * horizon - 1),
+          min_train_size: plan.minTrainSize,
           seed: 42,
         }),
-      });
+      }));
       if (submit.status === 401) throw new Error("That API key was not accepted. Check that you pasted the whole key.");
-      if (!submit.ok) throw new Error(`Submit failed: ${submit.status}`);
+      if (!submit.ok) {
+        // The API answers a refused run with a plain-sentence `detail`.
+        const detail = await submit
+          .json()
+          .then((d: { detail?: unknown }) => (typeof d.detail === "string" ? d.detail : ""))
+          .catch(() => "");
+        throw new Error(
+          detail ||
+            (submit.status === 403
+              ? `The leaderboard is part of the ${gatedPlan(site()).plan} plan, and your key is on a different plan.`
+              : "The leaderboard could not start this run. Please try again."),
+        );
+      }
       const { run_id } = await submit.json();
       setRunId(run_id);
 
       // Poll until complete.
       for (let i = 0; i < 120; i++) {
         await new Promise((res) => setTimeout(res, 1500));
-        const poll = await fetch(`${API_BASE}/forecast/leaderboard/${run_id}`, {
-          headers: authHeaders(),
-        });
+        const poll = await fetch(
+          `${API_BASE}/forecast/leaderboard/${run_id}`,
+          authInit(key, { headers: authHeaders() }),
+        );
         const body = await poll.json();
         if (body.status === "complete") {
           setResult(body.result as LeaderboardResult);
@@ -335,7 +368,7 @@ export default function LeaderboardView({ token = "" }: { token?: string }) {
           return;
         }
         if (body.status === "failed") {
-          throw new Error(body.error ?? "run failed");
+          throw new Error(body.error ?? "The leaderboard could not finish on this series.");
         }
       }
       throw new Error("timed out waiting for the run");
@@ -348,9 +381,10 @@ export default function LeaderboardView({ token = "" }: { token?: string }) {
   async function fetchReceipt() {
     if (!runId) return;
     try {
-      const r = await fetch(`${API_BASE}/forecast/leaderboard/${runId}/receipt`, {
-        headers: authHeaders(),
-      });
+      const r = await fetch(
+        `${API_BASE}/forecast/leaderboard/${runId}/receipt`,
+        authInit(credential(), { headers: authHeaders() }),
+      );
       if (!r.ok) throw new Error(`receipt failed: ${r.status}`);
       const rec = await r.json();
       setReceipt({ calibration_id: rec.calibration_id, signature: rec.signature });
@@ -365,9 +399,10 @@ export default function LeaderboardView({ token = "" }: { token?: string }) {
   async function downloadXlsx() {
     if (!runId) return;
     try {
-      const r = await fetch(`${API_BASE}/forecast/leaderboard/${runId}/xlsx`, {
-        headers: authHeaders(),
-      });
+      const r = await fetch(
+        `${API_BASE}/forecast/leaderboard/${runId}/xlsx`,
+        authInit(credential(), { headers: authHeaders() }),
+      );
       if (!r.ok) throw new Error(`export failed: ${r.status}`);
       const blob = await r.blob();
       const url = URL.createObjectURL(blob);
@@ -383,28 +418,10 @@ export default function LeaderboardView({ token = "" }: { token?: string }) {
     }
   }
 
-  // SimOS arrivals contract: the winning forecast as a SimOS-consumable
-  // arrivals.schedule YAML. Humans audit the .xlsx; SimOS ingests this YAML.
-  async function downloadArrivalsYaml() {
-    if (!runId) return;
-    try {
-      const r = await fetch(`${API_BASE}/forecast/leaderboard/${runId}/arrivals.yaml`, {
-        headers: authHeaders(),
-      });
-      if (!r.ok) throw new Error(`SimOS YAML export failed: ${r.status}`);
-      const blob = await r.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `arrivals_${runId}.yaml`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  }
+  // SimOS arrivals contract: the winning forecast as SimOS arrivals. The
+  // hand-off panel asks what one number means and shows the converted orders
+  // per hour before the download (customer journey C-01).
+  const [showSimos, setShowSimos] = useState(false);
 
   // Sub-Premium handed-off key → clean pre-gate instead of the runnable form.
   if (access === "gated") {
@@ -582,8 +599,22 @@ export default function LeaderboardView({ token = "" }: { token?: string }) {
           receipt={receipt}
           onFetchReceipt={fetchReceipt}
           onDownloadXlsx={downloadXlsx}
-          onDownloadYaml={downloadArrivalsYaml}
+          onToggleSimos={() => setShowSimos((v) => !v)}
+          simosOpen={showSimos}
         />
+      )}
+      {result && showSimos && runId && (
+        <div style={{ marginTop: 12 }}>
+          <SimosHandoffPanel
+            source={{
+              kind: "leaderboard",
+              apiBase: API_BASE,
+              runId,
+              headers: () => authHeaders(),
+              credentials: () => authInit(credential()).credentials,
+            }}
+          />
+        </div>
       )}
     </section>
   );
@@ -594,41 +625,22 @@ function Results({
   receipt,
   onFetchReceipt,
   onDownloadXlsx,
-  onDownloadYaml,
+  onToggleSimos,
+  simosOpen,
 }: {
   result: LeaderboardResult;
   receipt: { calibration_id: string; signature: string } | null;
   onFetchReceipt: () => void;
   onDownloadXlsx: () => void;
-  onDownloadYaml: () => void;
+  onToggleSimos: () => void;
+  simosOpen: boolean;
 }) {
   const winnerEntry = result.entries.find((e) => e.method_id === result.winner_method_id);
   return (
     <div style={{ marginTop: 24 }}>
-      {/* Winner banner */}
-      <div
-        style={{
-          padding: "0.9rem 1.1rem",
-          borderRadius: 8,
-          backgroundColor: result.winner_is_benchmark ? PALETTE.errorBg : PALETTE.okBg,
-          border: `1px solid ${result.winner_is_benchmark ? PALETTE.errorBorder : PALETTE.okBorder}`,
-          marginBottom: 16,
-        }}
-      >
-        {result.winner_is_benchmark ? (
-          <p style={{ margin: 0, color: PALETTE.error, fontSize: "0.9rem" }}>
-            ⚠ No forecaster beat the naive benchmarks. Recommending the safest baseline:{" "}
-            <strong>{result.winner_method_id}</strong>. Your series may be too short or too
-            noisy for a model to add value. That's an honest answer, not a failure.
-          </p>
-        ) : (
-          <p style={{ margin: 0, color: PALETTE.ok, fontSize: "0.95rem" }}>
-            ✓ Winner: <strong>{result.winner_method_id}</strong>, beats all naive benchmarks
-            (CRPS {winnerEntry?.crps.toFixed(3)}, 90% coverage{" "}
-            {winnerEntry?.coverage_90 != null ? `${(winnerEntry.coverage_90 * 100).toFixed(0)}%` : "n/a"}).
-          </p>
-        )}
-      </div>
+      {/* Winner banner. C-09 / F-21: a winner whose band under-covers is a
+          caution, not an unqualified green win. */}
+      <WinnerBanner result={result} winnerEntry={winnerEntry} />
 
       {/* Ranked table */}
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.82rem" }}>
@@ -672,8 +684,20 @@ function Results({
                 <td style={tdStyle}>
                   {e.coverage_50 != null ? `${(e.coverage_50 * 100).toFixed(0)}%` : "n/a"}
                 </td>
-                <td style={tdStyle}>
+                <td
+                  style={{
+                    ...tdStyle,
+                    color: e.interval_calibration === "too_narrow" ? PALETTE.warn : tdStyle.color,
+                    whiteSpace: "nowrap",
+                  }}
+                  title={
+                    e.interval_calibration === "too_narrow"
+                      ? "Band too narrow: an honest 90% band catches about 90% of actuals."
+                      : undefined
+                  }
+                >
                   {e.coverage_90 != null ? `${(e.coverage_90 * 100).toFixed(0)}%` : "n/a"}
+                  {e.interval_calibration === "too_narrow" && " low"}
                 </td>
                 <td style={tdStyle}>
                   {e.is_benchmark ? (
@@ -691,6 +715,14 @@ function Results({
           })}
         </tbody>
       </table>
+
+      {result.entries.some((e) => e.interval_calibration === "too_narrow") && (
+        <p style={{ margin: "8px 0 0 0", fontSize: "0.72rem", color: PALETTE.textFaint }}>
+          <span style={{ color: PALETTE.warn }}>low</span>: the band caught well under the share of actuals it
+          promises (under 75% for the 90% band, or under 35% for the 50% band), so it is too narrow to set
+          safety stock from.
+        </p>
+      )}
 
       {/* Reproducibility + receipt */}
       <div style={{ marginTop: 16, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
@@ -730,8 +762,9 @@ function Results({
           ⬇ Download Excel
         </button>
         <button
-          onClick={onDownloadYaml}
-          title="Download the winning forecast as a SimOS arrivals.schedule YAML (the DSO→SimOS contract SimOS consumes directly)"
+          onClick={onToggleSimos}
+          aria-expanded={simosOpen}
+          title="Convert the winning forecast into SimOS arrivals (orders per hour) and download it for SimOS Builder"
           style={{
             padding: "5px 12px",
             fontSize: "0.78rem",
@@ -743,7 +776,7 @@ function Results({
             fontWeight: 700,
           }}
         >
-          ⬇ SimOS YAML
+          {simosOpen ? "Hide SimOS hand-off" : "Send to SimOS"}
         </button>
       </div>
       {receipt && (
@@ -764,6 +797,48 @@ function Results({
           <span style={{ color: PALETTE.textFaint }}>HMAC signature:</span> {receipt.signature}
         </div>
       )}
+    </div>
+  );
+}
+
+function WinnerBanner({
+  result,
+  winnerEntry,
+}: {
+  result: LeaderboardResult;
+  winnerEntry: LeaderboardEntry | undefined;
+}) {
+  const v = winnerVerdict({
+    winner_method_id: result.winner_method_id,
+    winner_is_benchmark: result.winner_is_benchmark,
+    winner_interval_calibration: result.winner_interval_calibration,
+    crps: winnerEntry?.crps,
+    coverage_50: winnerEntry?.coverage_50,
+    coverage_90: winnerEntry?.coverage_90,
+  });
+  const colors =
+    v.tone === "good"
+      ? { fg: PALETTE.ok, bg: PALETTE.okBg, border: PALETTE.okBorder, mark: "✓" }
+      : v.tone === "caution"
+        ? { fg: PALETTE.warn, bg: PALETTE.warnBg, border: PALETTE.warnBorder, mark: "⚠" }
+        : { fg: PALETTE.error, bg: PALETTE.errorBg, border: PALETTE.errorBorder, mark: "⚠" };
+  return (
+    <div
+      role="status"
+      style={{
+        padding: "0.9rem 1.1rem",
+        borderRadius: 8,
+        backgroundColor: colors.bg,
+        border: `1px solid ${colors.border}`,
+        marginBottom: 16,
+      }}
+    >
+      <p style={{ margin: 0, color: colors.fg, fontSize: "0.95rem", fontWeight: 600 }}>
+        {colors.mark} {v.headline}
+      </p>
+      <p style={{ margin: "6px 0 0 0", color: PALETTE.textMuted, fontSize: "0.82rem", lineHeight: 1.5 }}>
+        {v.detail}
+      </p>
     </div>
   );
 }
@@ -840,5 +915,6 @@ function badge(color: string, bg: string, border: string): React.CSSProperties {
     color,
     backgroundColor: bg,
     border: `1px solid ${border}`,
+    whiteSpace: "nowrap",
   };
 }

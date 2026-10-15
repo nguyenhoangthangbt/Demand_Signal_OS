@@ -33,6 +33,10 @@ _CORS_ORIGINS = [
     "https://demandsignal-api.sim-os.ai",
     "https://plan2cash.sim-os.ai",
     "https://plan2cash-api.sim-os.ai",
+    # PlanningOS "Use a DSO forecast" (journey finding C-03) calls
+    # /forecast/single from the planning workbench, on both public sites.
+    "https://planning.sim-os.ai",
+    "https://planning.plan2cash.com",
 ]
 
 
@@ -43,6 +47,7 @@ def create_app() -> Any:
 
     from demand_signal_os.api.account_routes import router as account_router
     from demand_signal_os.api.actuals_routes import router as actuals_router
+    from demand_signal_os.api.batch_routes import router as batch_router
     from demand_signal_os.api.forecast_routes import router as forecast_router
     from demand_signal_os.api.inventory_routes import router as inventory_router
     from demand_signal_os.api.leaderboard_routes import router as leaderboard_router
@@ -90,6 +95,8 @@ def create_app() -> Any:
     app.include_router(receipt_router, prefix="/api/v1")
     app.include_router(leaderboard_router, prefix="/api/v1")
     app.include_router(forecast_router, prefix="/api/v1")
+    # Multi-SKU file forecast (C-08 / F-03), gated like the leaderboard.
+    app.include_router(batch_router, prefix="/api/v1")
     app.include_router(account_router, prefix="/api/v1")
     # W4 (DSO -> O2C policy) + W8 (O2C -> DSO actuals) HTTP surfaces.
     app.include_router(inventory_router, prefix="/api/v1")

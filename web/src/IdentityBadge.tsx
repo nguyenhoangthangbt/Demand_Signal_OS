@@ -8,6 +8,8 @@
 // half-empty chip. Styled to blend into the muted nav (small font, faint color).
 
 import { useEffect, useState } from "react";
+import { identityLabel, identityParts, type WhoAmI } from "./lib/identity";
+import { authInit } from "./lib/session";
 
 // Same DSO API base the rest of App uses: same-origin "/api/v1" in dev,
 // the absolute demand-signal-api base in prod (VITE_DSO_API_BASE).
@@ -18,17 +20,7 @@ const DSO_API: string =
 const TEXT_FAINT = "#64748b";
 const LINK = "#7dd3fc";
 
-interface WhoAmI {
-  name: string | null;
-  role: string | null;
-  tier: string | null;
-}
-
-function cap(s: string): string {
-  return s.length ? s[0].toUpperCase() + s.slice(1).toLowerCase() : s;
-}
-
-export default function IdentityBadge({ token }: { token: string }) {
+export default function IdentityBadge({ token, compact = false }: { token: string; compact?: boolean }) {
   const [who, setWho] = useState<WhoAmI | null>(null);
 
   useEffect(() => {
@@ -37,9 +29,8 @@ export default function IdentityBadge({ token }: { token: string }) {
       return;
     }
     let cancelled = false;
-    fetch(`${DSO_API}/account/whoami`, {
-      headers: { "X-API-Key": token },
-    })
+    // Session cookie mode: the cookie identifies the caller, no key header.
+    fetch(`${DSO_API}/account/whoami`, authInit(token, { headers: { "X-API-Key": token } }))
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
       .then((d: WhoAmI) => {
         if (!cancelled) setWho(d);
@@ -52,17 +43,21 @@ export default function IdentityBadge({ token }: { token: string }) {
     };
   }, [token]);
 
-  // Nothing to show until we have a resolved name. Fail-soft: the endpoint
-  // returns all-null for an unrecognized key / MAO outage.
-  if (!token || !who || !who.name) return null;
-
-  const parts = [who.name];
-  if (who.role) parts.push(who.role.toUpperCase());
-  if (who.tier) parts.push(cap(who.tier));
+  // Name and plan only, never the internal role (audit 2026-10-12, B-36 /
+  // C-25 / F-23). Nothing to show until one of the two resolves. Fail-soft:
+  // the endpoint returns all-null for an unrecognized key / MAO outage.
+  const label = token ? identityLabel(who) : null;
+  const parts = token ? identityParts(who) : null;
+  if (!label || !parts) return null;
+  // UAT 2026-10-14 F2: on a phone the chip ran past the viewport and clipped
+  // the plan. The plan never truncates; the name shrinks with an ellipsis and
+  // is dropped in compact (phone) mode when a plan is known.
+  const showName = parts.name && !(compact && parts.plan);
 
   return (
     <span
-      title="Active account, role and tier"
+      title={label}
+      aria-label={`Signed in: ${label}`}
       style={{
         marginLeft: "auto",
         color: TEXT_FAINT,
@@ -71,13 +66,18 @@ export default function IdentityBadge({ token }: { token: string }) {
         display: "inline-flex",
         alignItems: "center",
         gap: 4,
+        minWidth: 0,
         maxWidth: "100%",
-        overflow: "hidden",
-        textOverflow: "ellipsis",
       }}
     >
-      <span style={{ color: LINK }}>●</span>
-      {parts.join(" | ")}
+      <span style={{ color: LINK, flexShrink: 0 }}>●</span>
+      {showName && (
+        <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", maxWidth: "14rem" }}>
+          {parts.name}
+        </span>
+      )}
+      {showName && parts.plan && <span style={{ flexShrink: 0 }}>|</span>}
+      {parts.plan && <span style={{ flexShrink: 0 }}>{parts.plan}</span>}
     </span>
   );
 }

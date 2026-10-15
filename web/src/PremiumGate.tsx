@@ -6,6 +6,7 @@
 // fill the whole form only to fail at submit.
 
 import { site } from "./lib/site";
+import { gatedPlan } from "./lib/planCopy";
 
 // Mirror of the App.tsx PALETTE (DSO's dark theme). Kept local so this component
 // is self-contained and styled consistently with the rest of the SPA.
@@ -35,7 +36,7 @@ export default function PremiumGate({ tier }: { tier?: string | null }) {
         }}
       >
         <h2 style={{ margin: 0, fontSize: "1.25rem", color: PALETTE.text }}>
-          DemandSignalOS forecasting is a Premium feature
+          DemandSignalOS forecasting is a {gatedPlan(site()).plan} feature
         </h2>
         <p
           style={{
@@ -46,7 +47,7 @@ export default function PremiumGate({ tier }: { tier?: string | null }) {
           }}
         >
           {site() === "plan2cash"
-            ? "The forecaster leaderboard is included in the Premium and Enterprise plans."
+            ? "The forecaster leaderboard is included in the Enterprise plan."
             : "The forecaster leaderboard is included in the Premium plan."}
           {tier ? (
             <>
@@ -59,7 +60,7 @@ export default function PremiumGate({ tier }: { tier?: string | null }) {
           )}
         </p>
         <a
-          href="https://sim-os.ai/pricing"
+          href={gatedPlan(site()).href}
           style={{
             display: "inline-block",
             marginTop: 20,
@@ -73,7 +74,7 @@ export default function PremiumGate({ tier }: { tier?: string | null }) {
             textDecoration: "none",
           }}
         >
-          View pricing
+          {site() === "plan2cash" ? "About Enterprise" : "View pricing"}
         </a>
         <p style={{ margin: "16px 0 0", fontSize: "0.75rem", color: PALETTE.textFaint }}>
           Already upgraded? Email{" "}

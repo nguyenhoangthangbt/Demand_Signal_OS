@@ -328,6 +328,8 @@ bundle: ForecastBundle = forecast_single(sku_id, location_id, "operational", buc
 
 **REST endpoint** (materializes v0.1.5+): `GET /api/v1/forecasts/bulk?scenario_id=...&horizon=...`.
 
+**SimOS arrivals export and its hand-off basis (2026-10-13, customer journey C-01).** The downloads `POST /api/v1/forecast/single.yaml`, `POST /api/v1/forecast/single.simos.xlsx` and `GET /api/v1/forecast/leaderboard/{run_id}/arrivals.yaml` turn a forecast into a SimOS `arrivals.schedule`. A forecast value is demand per period; SimOS needs orders per hour, so the caller states the basis: `data_frequency` (day, week, month), `demand_unit` (orders, units), `units_per_order`, `operating_hours_per_day` (0 to 24], `operating_days_per_week` (0 to 7]. POST bodies carry it as `handoff: {...}`; the leaderboard GET takes the same names as query parameters. Rate per hour = value / units per order / operating hours per period, where a month is hours x days x (365.25 / 12) / 7. The schedule clock counts operating hours (entry i starts at i x hours per period). Every YAML states the conversion in a `# Conversion:` header line. `POST /api/v1/forecast/single.simos.preview` and `GET .../arrivals.preview` return the converted rate per period so the workbench can show it for confirmation before the download. Without a basis the old reading applies (orders per `bucket_period` on a 24 h, 7 day calendar) and the header says so.
+
 ### 3.2 DemandSignalOS → PlanningOS SD — aggregated flow curves
 
 **Consumer:** `Planning_os/` System Dynamics strategic-planning engine.
@@ -608,6 +610,8 @@ Per architect M4 — explicit decision rather than implicit omission.
 **Data classification:** demand actuals contain customer-business-sensitive information. v0.1 library writes no persistent storage. v0.1.5 storage decisions documented separately in `OPERATIONS.md`.
 
 This is a **conscious decision** to ship v0.1 without authentication, not an omission. Documented per architect Round-1 + Round-2 guidance.
+
+**Browser session (P0-11, R1 API + R2a web, 2026-10-14).** The API accepts the MAO HttpOnly session cookie `__Secure-mao_session` when no `Authorization` / `X-API-Key` header is present (header wins); cookie-authenticated writes need an allowlisted `Origin` and `X-Requested-With: mao`. Inert while `MAO_SESSION_SEAL_KEY` is unset. The web app (`web/src/lib/session.ts`) probes `GET {agents-api}/auth/session` at boot: when MAO answers 200 signed in or 401 it trades any `?key=`, legacy `dso_token_v1` localStorage copy or `mao_sso` value once for the cookie (`POST /auth/session`), keeps no key in localStorage, readable cookies or URLs, calls the API with `credentials: "include"` and the CSRF header on writes, and signs out through `POST /auth/logout`. When MAO answers 200 `{"enabled": false}` (sessions off), 404 (an older MAO), an error or nothing, the web app keeps the bearer flow unchanged. `VITE_MAO_AUTH_BASE` overrides the MAO base (local dev; `off` disables).
 
 ---
 

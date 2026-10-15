@@ -1,45 +1,56 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
-import { readSsoCookie, writeSsoCookie } from "./sso";
+import { clearSsoCookie, readSsoCookie, writeSsoCookie } from "./sso";
+import { bootSession, maoAuthBase } from "./lib/session";
 
-// Cross-engine SSO handoff: resolve the tier-key from (in priority order) the
-// entry URL `?key=<mao_live_…>` (e.g. arriving from the Plan2Cash "Native"
-// link), the per-origin localStorage cache, then the shared parent-domain
-// cookie set by a sibling *.sim-os.ai engine. Strip the URL param so the key
-// never lingers in the address bar / history, then mirror whatever we resolved
-// into BOTH localStorage (fast per-engine cache) and the cookie (the
-// cross-subdomain carrier). Runs before the App reads localStorage, so the
-// first render is authed.
-try {
-  const params = new URLSearchParams(window.location.search);
-  let key = params.get("key") ?? "";
-  if (key) {
-    params.delete("key");
-    const q = params.toString();
-    window.history.replaceState(
-      {},
-      "",
-      window.location.pathname + (q ? `?${q}` : "") + window.location.hash,
-    );
+const TOKEN_KEY = "dso_token_v1";
+
+// Sign-in resolution, once per page load (P0-11 R2a, lib/session.ts).
+// MAO /auth on: the HttpOnly session cookie is the sign-in. A key arriving by
+// `?key=`, a legacy localStorage copy or the shared mao_sso cookie is traded
+// once for the session; this page then keeps no key anywhere.
+// MAO /auth off or unreachable: today's flow. Resolve `?key=` (e.g. the
+// Plan2Cash "Native" link) then the shared parent-domain cookie, which is
+// AUTHORITATIVE (no cookie = signed out elsewhere, drop the local copy), and
+// mirror it into localStorage and the cookie.
+// Either way `?key=` is stripped so the key never lingers in the address bar.
+async function resolveToken(): Promise<string> {
+  try {
+    return await bootSession({
+      base: maoAuthBase(),
+      fetch: (url, init) => fetch(url, init),
+      search: window.location.search,
+      stripKeyParam: () => {
+        const params = new URLSearchParams(window.location.search);
+        params.delete("key");
+        const q = params.toString();
+        window.history.replaceState(
+          {},
+          "",
+          window.location.pathname + (q ? `?${q}` : "") + window.location.hash,
+        );
+      },
+      storage: {
+        get: (k) => localStorage.getItem(k),
+        set: (k, v) => localStorage.setItem(k, v),
+        remove: (k) => localStorage.removeItem(k),
+      },
+      storageKey: TOKEN_KEY,
+      readSso: readSsoCookie,
+      writeSso: writeSsoCookie,
+      clearSso: clearSsoCookie,
+    });
+  } catch {
+    /* SSO resolve is best-effort; the SPA still loads */
+    return "";
   }
-  // Cookie is AUTHORITATIVE for the cross-engine session: resolve ?key= then the
-  // shared cookie — NOT the stale per-origin cache. If neither is present, any
-  // leftover localStorage token is from a session signed out elsewhere (the
-  // cookie was cleared), so drop it — this makes sign-out truly global.
-  if (!key) key = readSsoCookie();
-  if (key) {
-    localStorage.setItem("dso_token_v1", key);
-    writeSsoCookie(key);
-  } else {
-    localStorage.removeItem("dso_token_v1");
-  }
-} catch {
-  /* SSO resolve is best-effort; the SPA still loads */
 }
 
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-);
+resolveToken().then((token) => {
+  createRoot(document.getElementById("root")!).render(
+    <StrictMode>
+      <App initialToken={token} />
+    </StrictMode>,
+  );
+});

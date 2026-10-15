@@ -10,12 +10,30 @@
 // → fill → upload + validate → run → see synthetic forecast band +
 // drift signal.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import LeaderboardView from "./LeaderboardView";
 import VerifyView from "./VerifyView";
 import IdentityBadge from "./IdentityBadge";
+import SimosHandoffPanel from "./SimosHandoffPanel";
 import { writeSsoCookie, clearSsoCookie } from "./sso";
+import { authInit, endSession, isSessionToken, signInWithKey } from "./lib/session";
 import { site } from "./lib/site";
+import BatchForecast from "./BatchForecast";
+import { footerParts } from "./lib/planCopy";
+import { niceTicks, formatTick, xLabelIndexes } from "./lib/chartAxis";
+import {
+  SEASON_OPTIONS,
+  DEFAULT_HORIZON,
+  MAX_HORIZON,
+  clampHorizon,
+  parseSeasonChoice,
+  forecastRequestSettings,
+  describeSettings,
+  type SeasonChoice,
+  type ResolvedSettings,
+} from "./lib/forecastSettings";
+import GOLDEN_BOARD from "./goldenLeaderboard.json";
+import { chartFrame, labelAnchor, plotPadding } from "./lib/chartFrame";
 
 // The self-serve site (sim-os.ai) sells DSO in Premium; Order2Cash, P2C and
 // the P2C Excel template hub are Enterprise and live on plan2cash.com only.
@@ -109,9 +127,14 @@ interface TemplateMeta {
   field_count: number;
 }
 
-export default function App() {
-  const [token, setToken] = useState<string>(() => localStorage.getItem(TOKEN_KEY) ?? "");
-  const [draftToken, setDraftToken] = useState<string>(token);
+export default function App({ initialToken }: { initialToken?: string } = {}) {
+  // `token` is the key (bearer mode) or a non-secret session marker when the
+  // MAO session cookie carries the sign-in (lib/session.ts, P0-11 R2a).
+  const [token, setToken] = useState<string>(
+    () => initialToken ?? localStorage.getItem(TOKEN_KEY) ?? "",
+  );
+  const [draftToken, setDraftToken] = useState<string>(isSessionToken(token) ? "" : token);
+  const [signInError, setSignInError] = useState<string>("");
   // Series lifted from a validated demand_history upload -> the live forecast
   // below forecasts YOUR data, not the sample series.
   const [forecastSeries, setForecastSeries] = useState<number[] | null>(null);
@@ -120,6 +143,8 @@ export default function App() {
   const isLeaderboard = hash === "#leaderboard";
 
   useEffect(() => {
+    // Session cookie mode: the key lives only in MAO's HttpOnly cookie.
+    if (isSessionToken(token)) return;
     if (token) {
       localStorage.setItem(TOKEN_KEY, token);
       // Mirror into the parent-domain cookie so sibling *.sim-os.ai engines
@@ -174,7 +199,10 @@ export default function App() {
           Account, Sign out, identity badge). */}
       <Header
         token={token}
-        onSignOut={() => {
+        onSignOut={async () => {
+          // Session cookie mode: MAO revokes the session and clears its
+          // HttpOnly cookie and mao_sso for every engine.
+          if (isSessionToken(token)) await endSession();
           localStorage.removeItem(TOKEN_KEY);
           // Global sign-out: clear the shared .sim-os.ai cookie so signing out
           // here signs the user out of every engine (mirrors login-once).
@@ -197,12 +225,28 @@ export default function App() {
             <TokenGate
               draftToken={draftToken}
               setDraftToken={setDraftToken}
-              onSubmit={() => setToken(draftToken.trim())}
+              error={signInError}
+              onSubmit={async () => {
+                setSignInError("");
+                const r = await signInWithKey(draftToken.trim());
+                if ("error" in r) {
+                  setSignInError(
+                    "That API key wasn't recognized. Check that you pasted the whole key, starting with mao_live_.",
+                  );
+                  return;
+                }
+                setToken(r.token);
+                if (isSessionToken(r.token)) setDraftToken("");
+              }}
             />
           ) : (
             <WorkbenchSection token={token} onForecastSeries={setForecastSeries} />
           )}
           <ForecastPreview series={forecastSeries} />
+          {/* C-08: many SKU and location series from one file (Premium). */}
+          <section style={{ padding: "0 1.5rem 1.75rem", maxWidth: 900, margin: "0 auto" }}>
+            <BatchForecast token={token} onPickSeries={setForecastSeries} />
+          </section>
           <HowItWorks />
         </>
       )}
@@ -238,7 +282,18 @@ function Header({ token, onSignOut }: { token: string; onSignOut: () => void }) 
           </p>
         )}
       </div>
-      <nav style={{ display: "flex", gap: isMobile ? 8 : 12, alignItems: "center", flexShrink: 0 }}>
+      <nav
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          columnGap: isMobile ? 8 : 12,
+          rowGap: 4,
+          alignItems: "center",
+          flexShrink: 1,
+          minWidth: 0,
+          maxWidth: "100%",
+        }}
+      >
         <a
           href="#leaderboard"
           style={{ color: PALETTE.link, fontSize: isMobile ? "0.75rem" : "0.8rem", textDecoration: "none" }}
@@ -281,7 +336,7 @@ function Header({ token, onSignOut }: { token: string; onSignOut: () => void }) 
             Sign out
           </button>
         )}
-        <IdentityBadge token={token} />
+        <IdentityBadge token={token} compact={isMobile} />
       </nav>
     </header>
   );
@@ -308,7 +363,8 @@ function Hero() {
         <span
           style={{
             display: "inline-block",
-            fontSize: isMobile ? "0.6rem" : "0.65rem",
+            // 11.2 px on a phone (was 9.6 px, audit D-08).
+            fontSize: isMobile ? "0.7rem" : "0.65rem",
             padding: "2px 8px",
             backgroundColor: PALETTE.warnBg,
             color: PALETTE.warn,
@@ -450,32 +506,30 @@ function HeroFanChart({ isMobile = false }: { isMobile?: boolean }) {
   );
 }
 
-// LeaderboardSection · animated illustration of the forecaster leaderboard,
-// DSO's monetizable USP. Six forecasting methods (realistic names: ETS,
-// ARIMA, Croston, LightGBM, Theta, Naïve-S) are ranked by mock CRPS scores;
-// every 6 s a pair swaps to convey "live competition." The top row carries
-// a golden star + a pulsing BEATS BENCHMARK tag. Smooth FLIP-style
-// translateY transitions between reshuffles. Pure CSS animation, dark-
-// native, reduced-motion aware.
+// LeaderboardSection: the forecaster leaderboard, DSO's monetizable USP, shown
+// with the REAL result of the golden FACE-CRM run (audit finding C-10). It
+// used to rank six methods by invented CRPS scores (LightGBM "winning" at
+// 2.143) and shuffle them at random, while the real golden run ranks gbm 7th.
+// The rows now come from goldenLeaderboard.json, which a Python test
+// (tests/leaderboard/test_golden_and_calibration.py) re-derives from the
+// engine, so the hero cannot drift from what the leaderboard really returns.
+// Rows grow in once on load; still under prefers-reduced-motion.
 
-const FORECASTERS = [
-  { id: "lightgbm", name: "LightGBM",  family: "ml"    },
-  { id: "ets",      name: "ETS",       family: "stat"  },
-  { id: "arima",    name: "ARIMA",     family: "stat"  },
-  { id: "theta",    name: "Theta",     family: "stat"  },
-  { id: "croston",  name: "Croston",   family: "inter" },
-  { id: "naive",    name: "Naïve-S",   family: "base"  },
-] as const;
-
-// Rank-positioned CRPS scores (lower = better). Stay put visually while
-// methods rotate through positions — eye reads "methods racing for the top
-// slot," not "scores changing."
-const RANK_SCORES = ["2.143", "2.281", "2.456", "2.612", "2.788", "2.961"];
-const ROW_HEIGHT = 38;
+interface GoldenEntry {
+  rank: number;
+  method_id: string;
+  label: string;
+  crps: number;
+  is_benchmark: boolean;
+  beats_all_benchmarks: boolean | null;
+  coverage_90: number;
+}
+const GOLDEN_ENTRIES = GOLDEN_BOARD.entries as GoldenEntry[];
+const ROW_HEIGHT = 34;
 
 function LeaderboardSection() {
   const [reduced, setReduced] = useState(false);
-  const [order, setOrder] = useState<readonly string[]>(() => FORECASTERS.map((m) => m.id));
+  const [shown, setShown] = useState(false);
   const isMobile = useMatchMedia("(max-width: 640px)");
 
   useEffect(() => {
@@ -485,23 +539,15 @@ function LeaderboardSection() {
     mq.addEventListener("change", set);
     return () => mq.removeEventListener("change", set);
   }, []);
-
   useEffect(() => {
-    if (reduced) return;
-    const tick = window.setInterval(() => {
-      setOrder((prev) => {
-        // Swap one random adjacent pair so motion stays gentle, not chaotic.
-        const arr = [...prev];
-        const i = Math.floor(Math.random() * (arr.length - 1));
-        [arr[i], arr[i + 1]] = [arr[i + 1], arr[i]];
-        return arr;
-      });
-    }, 5500);
-    return () => window.clearInterval(tick);
-  }, [reduced]);
+    const t = window.setTimeout(() => setShown(true), 120);
+    return () => window.clearTimeout(t);
+  }, []);
 
-  const panelMaxW = 480;
-  const panelH = ROW_HEIGHT * FORECASTERS.length + 12;
+  const best = GOLDEN_ENTRIES[0].crps;
+  const winner = GOLDEN_ENTRIES[0];
+  const caught = Math.round(winner.coverage_90 * GOLDEN_BOARD.test_points);
+  const grow = shown || reduced;
 
   return (
     <section
@@ -543,160 +589,122 @@ function LeaderboardSection() {
           </a>
         </div>
 
-        {/* Animated leaderboard panel right. */}
-        <div
-          aria-hidden="true"
-          style={{
-            position: "relative",
-            width: "100%",
-            maxWidth: panelMaxW,
-            height: panelH,
-            margin: "0 auto",
-            backgroundColor: PALETTE.bgPanel,
-            border: `1px solid ${PALETTE.border}`,
-            borderRadius: 10,
-            padding: "6px 0",
-            overflow: "hidden",
-            boxShadow: "0 6px 24px rgba(7, 24, 60, 0.35)",
-          }}
-        >
-          {FORECASTERS.map((m) => {
-            const rank = order.indexOf(m.id);
-            const isWinner = rank === 0;
-            const barPct = 100 - rank * 13;
-            return (
-              <div
-                key={m.id}
-                className="dso-lb-row"
-                style={{
-                  position: "absolute",
-                  top: 6,
-                  left: 0,
-                  right: 0,
-                  height: ROW_HEIGHT,
-                  transform: `translateY(${rank * ROW_HEIGHT}px)`,
-                  transition: reduced ? "none" : "transform 0.85s cubic-bezier(0.4, 0, 0.2, 1)",
-                  display: "grid",
-                  gridTemplateColumns: "32px 1fr 24px",
-                  alignItems: "center",
-                  gap: 10,
-                  padding: "0 14px",
-                  opacity: isWinner ? 1 : 0.45 + (1 - rank / FORECASTERS.length) * 0.4,
-                }}
-              >
-                {/* Rank number with star on winner. */}
-                <span
+        {/* Real golden leaderboard panel right. */}
+        <figure style={{ margin: 0, width: "100%", maxWidth: 480, justifySelf: "center" }}>
+          <div
+            style={{
+              backgroundColor: PALETTE.bgPanel,
+              border: `1px solid ${PALETTE.border}`,
+              borderRadius: 10,
+              padding: "6px 0",
+              boxShadow: "0 6px 24px rgba(7, 24, 60, 0.35)",
+            }}
+          >
+            {GOLDEN_ENTRIES.map((m, i) => {
+              const isWinner = i === 0;
+              const barPct = Math.round((best / m.crps) * 100);
+              return (
+                <div
+                  key={m.method_id}
                   style={{
-                    fontFamily: "monospace",
-                    fontSize: "0.85rem",
-                    color: isWinner ? PALETTE.warn : PALETTE.textDim,
-                    fontWeight: 700,
-                    display: "flex",
+                    height: ROW_HEIGHT,
+                    display: "grid",
+                    gridTemplateColumns: "26px 1fr 64px",
                     alignItems: "center",
-                    gap: 4,
+                    gap: 10,
+                    padding: "0 14px",
+                    opacity: grow ? (isWinner ? 1 : 0.85) : 0,
+                    transform: grow ? "none" : "translateY(6px)",
+                    transition: reduced ? "none" : `opacity 0.5s ease ${i * 70}ms, transform 0.5s ease ${i * 70}ms`,
                   }}
                 >
-                  {isWinner && <span className="dso-lb-star" style={{ color: PALETTE.warn }}>★</span>}
-                  {!isWinner && <span>{rank + 1}</span>}
-                </span>
-
-                {/* Method name + horizontal accuracy bar. */}
-                <div style={{ minWidth: 0 }}>
-                  <div
+                  <span
                     style={{
-                      display: "flex",
-                      alignItems: "baseline",
-                      gap: 8,
-                      marginBottom: 4,
+                      fontFamily: "monospace",
+                      fontSize: "0.82rem",
+                      color: isWinner ? PALETTE.warn : PALETTE.textDim,
+                      fontWeight: 700,
                     }}
                   >
-                    <span
-                      style={{
-                        fontSize: "0.88rem",
-                        fontWeight: 600,
-                        color: isWinner ? PALETTE.text : PALETTE.textMuted,
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {m.name}
-                    </span>
-                    {isWinner && (
+                    {isWinner ? "★" : m.rank}
+                  </span>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 3, flexWrap: "nowrap" }}>
                       <span
-                        className="dso-lb-badge"
                         style={{
-                          fontSize: "0.58rem",
-                          fontWeight: 700,
-                          letterSpacing: "0.08em",
-                          color: PALETTE.warn,
-                          backgroundColor: PALETTE.warnBg,
-                          border: `1px solid ${PALETTE.warnBorder}`,
-                          padding: "2px 6px",
-                          borderRadius: 3,
+                          fontSize: "0.85rem",
+                          fontWeight: 600,
+                          color: isWinner ? PALETTE.text : PALETTE.textMuted,
                           whiteSpace: "nowrap",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
                         }}
                       >
-                        BEATS BENCHMARK
+                        {m.label}
                       </span>
-                    )}
+                      {m.is_benchmark && (
+                        <span style={{ fontSize: isMobile ? "0.7rem" : "0.62rem", color: PALETTE.textFaint, whiteSpace: "nowrap" }}>
+                          naive benchmark
+                        </span>
+                      )}
+                      {isWinner && (
+                        <span
+                          style={{
+                            // 11.2 px on a phone (was 9.3 px, audit D-08).
+                            fontSize: isMobile ? "0.7rem" : "0.58rem",
+                            fontWeight: 700,
+                            letterSpacing: "0.08em",
+                            color: PALETTE.warn,
+                            backgroundColor: PALETTE.warnBg,
+                            border: `1px solid ${PALETTE.warnBorder}`,
+                            padding: "1px 6px",
+                            borderRadius: 3,
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          BEATS NAIVE
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ height: 5, backgroundColor: PALETTE.border, borderRadius: 2, overflow: "hidden" }}>
+                      <div
+                        style={{
+                          width: grow ? `${barPct}%` : "0%",
+                          height: "100%",
+                          background: isWinner
+                            ? `linear-gradient(90deg, ${PALETTE.band}, ${PALETTE.warn})`
+                            : m.is_benchmark
+                              ? PALETTE.textFaint
+                              : PALETTE.band,
+                          transition: reduced ? "none" : `width 0.8s cubic-bezier(0.4, 0, 0.2, 1) ${i * 70}ms`,
+                          opacity: isWinner ? 1 : 0.7,
+                        }}
+                      />
+                    </div>
                   </div>
-                  <div
+                  <span
                     style={{
-                      height: 5,
-                      backgroundColor: PALETTE.border,
-                      borderRadius: 2,
-                      overflow: "hidden",
+                      fontFamily: "monospace",
+                      fontSize: "0.76rem",
+                      color: isWinner ? PALETTE.warn : PALETTE.textFaint,
+                      fontWeight: 600,
+                      textAlign: "right",
                     }}
                   >
-                    <div
-                      style={{
-                        width: `${barPct}%`,
-                        height: "100%",
-                        background: isWinner
-                          ? `linear-gradient(90deg, ${PALETTE.band}, ${PALETTE.warn})`
-                          : PALETTE.band,
-                        transition: reduced ? "none" : "width 0.85s cubic-bezier(0.4, 0, 0.2, 1)",
-                        opacity: isWinner ? 1 : 0.7,
-                      }}
-                    />
-                  </div>
+                    {m.crps.toFixed(1)}
+                  </span>
                 </div>
-
-                {/* CRPS score for this rank slot. */}
-                <span
-                  style={{
-                    fontFamily: "monospace",
-                    fontSize: "0.78rem",
-                    color: isWinner ? PALETTE.warn : PALETTE.textFaint,
-                    fontWeight: 600,
-                    textAlign: "right",
-                  }}
-                >
-                  {RANK_SCORES[rank]}
-                </span>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+          <figcaption style={{ marginTop: 8, fontSize: "0.72rem", color: PALETTE.textDim, lineHeight: 1.5 }}>
+            Real leaderboard on our golden face cream series ({GOLDEN_BOARD.series}, 52 weeks of demand,{" "}
+            {GOLDEN_BOARD.test_points} test weeks). The number is CRPS, the forecast error: lower is better. The
+            winner&apos;s 90% band caught {caught} of {GOLDEN_BOARD.test_points} test weeks, so the leaderboard flags
+            that band as too narrow. Your own data will rank the methods differently.
+          </figcaption>
+        </figure>
       </div>
-
-      <style>{`
-        .dso-lb-star {
-          display: inline-block;
-          animation: dso-lb-twinkle 1.8s ease-in-out infinite;
-        }
-        @keyframes dso-lb-twinkle {
-          0%, 100% { opacity: 0.7; transform: scale(0.92); }
-          50%      { opacity: 1;   transform: scale(1.12); }
-        }
-        .dso-lb-badge { animation: dso-lb-glow 2.4s ease-in-out infinite; }
-        @keyframes dso-lb-glow {
-          0%, 100% { box-shadow: 0 0 0 rgba(252, 211, 77, 0); }
-          50%      { box-shadow: 0 0 12px rgba(252, 211, 77, 0.55); }
-        }
-        @media (prefers-reduced-motion: reduce) {
-          .dso-lb-star, .dso-lb-badge { animation: none !important; }
-        }
-      `}</style>
     </section>
   );
 }
@@ -705,10 +713,12 @@ function TokenGate({
   draftToken,
   setDraftToken,
   onSubmit,
+  error = "",
 }: {
   draftToken: string;
   setDraftToken: (v: string) => void;
   onSubmit: () => void;
+  error?: string;
 }) {
   return (
     <section
@@ -781,6 +791,11 @@ function TokenGate({
         >
           Continue
         </button>
+        {error && (
+          <p role="alert" style={{ margin: "8px 0 0", fontSize: "0.8rem", color: PALETTE.error }}>
+            {error}
+          </p>
+        )}
       </div>
     </section>
   );
@@ -803,10 +818,10 @@ function WorkbenchSection({
     warnings: { message?: string }[];
     values?: Record<string, unknown> | null;
   } | null>(null);
-  const [runOutput, setRunOutput] = useState<{
-    ok: boolean;
-    note: string;
-  } | null>(null);
+  // F-03: the validated workbook itself is what "Run forecast" forecasts
+  // (every SKU and location in it), not a roadmap note.
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [runFile, setRunFile] = useState<File | null>(null);
 
   useEffect(() => {
     setLoadError(null); // clear any prior error so a corrected key can retry
@@ -816,9 +831,10 @@ function WorkbenchSection({
       setTemplates(null);
       return;
     }
-    fetch(`${API_BASE}/api/v1/templates`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
+    fetch(
+      `${API_BASE}/api/v1/templates`,
+      authInit(token, { headers: { Authorization: `Bearer ${token}` } }),
+    )
       .then((r) => {
         if (!r.ok) {
           // 403 vs 401 are distinct failures. 403 means the key IS valid but
@@ -851,7 +867,7 @@ function WorkbenchSection({
     try {
       const r = await fetch(
         `${API_BASE}/api/v1/templates/demandsignal/${name}/download`,
-        { headers: { Authorization: `Bearer ${token}` } },
+        authInit(token, { headers: { Authorization: `Bearer ${token}` } }),
       );
       if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
       const blob = await r.blob();
@@ -872,23 +888,25 @@ function WorkbenchSection({
     if (!selected) return;
     setValidating(true);
     setValidateResult(null);
-    setRunOutput(null);
+    setUploadedFile(file);
+    setRunFile(null);
     try {
       const fd = new FormData();
       fd.append("file", file);
       const r = await fetch(
         `${API_BASE}/api/v1/templates/demandsignal/${selected}/validate`,
-        {
+        authInit(token, {
           method: "POST",
           headers: { Authorization: `Bearer ${token}` },
           body: fd,
-        },
+        }),
       );
       const d = await r.json();
       setValidateResult(d);
-      // On a clean validate, lift the observed-demand series so the live
-      // forecast below forecasts the user's OWN uploaded data.
-      if (d.ok && d.values && onForecastSeries) {
+      // On a clean validate of the single-SKU template, lift its series so the
+      // live chart below shows the user's OWN data. A multi-SKU workbook is
+      // not lifted (its rows would mix SKUs); Run forecast handles it.
+      if (d.ok && d.values && onForecastSeries && selected === "demand_history") {
         const series = extractDemandSeries(d.values);
         if (series.length >= 4) onForecastSeries(series);
       }
@@ -904,13 +922,7 @@ function WorkbenchSection({
   }
 
   function handleRun() {
-    setRunOutput({
-      ok: true,
-      note:
-        "Validated. The probabilistic forecast below is computed live from " +
-        "the series shown. Batch-forecasting your full uploaded history is " +
-        "on the roadmap.",
-    });
+    if (uploadedFile) setRunFile(uploadedFile);
   }
 
   return (
@@ -1101,19 +1113,14 @@ function WorkbenchSection({
                 ▶ Run forecast
               </button>
             )}
-            {runOutput && (
-              <div
-                style={{
-                  marginTop: 10,
-                  padding: "0.625rem 0.75rem",
-                  backgroundColor: PALETTE.warnBg,
-                  border: `1px solid ${PALETTE.warnBorder}`,
-                  borderRadius: 6,
-                  fontSize: "0.8rem",
-                  color: PALETTE.warn,
-                }}
-              >
-                {runOutput.note}
+            {runFile && (
+              <div style={{ marginTop: 12 }}>
+                <BatchForecast
+                  token={token}
+                  file={runFile}
+                  heading={false}
+                  onPickSeries={onForecastSeries}
+                />
               </div>
             )}
           </div>
@@ -1167,24 +1174,62 @@ function ForecastPreview({ series }: { series?: number[] | null }) {
   const [hover, setHover] = useState<number | null>(null);
   const [usingUpload, setUsingUpload] = useState(false);
   const [busy, setBusy] = useState(false);
+  // C-05: the season and horizon are the user's to see and change. "auto"
+  // (the default) lets the engine detect the cycle in the data; the response
+  // says what it used. Every export re-sends the settings of the charted run,
+  // so the downloads always match the chart.
+  const [season, setSeason] = useState<SeasonChoice>("auto");
+  const [horizon, setHorizon] = useState<number>(DEFAULT_HORIZON);
+  const [resolved, setResolved] = useState<ResolvedSettings | null>(null);
+  const [runSettings, setRunSettings] = useState(() =>
+    forecastRequestSettings("auto", DEFAULT_HORIZON),
+  );
+  // Draw at the real rendered width on a phone so labels stay readable (D-08).
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [svgPx, setSvgPx] = useState<number | null>(null);
+  useEffect(() => {
+    const el = svgRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => setSvgPx(el.getBoundingClientRect().width));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
-  const runForecast = (hist: number[]) => {
+  const runForecast = (
+    hist: number[],
+    settings = forecastRequestSettings(season, horizon),
+  ) => {
     setErr(null);
     setBusy(true);
     setHistory(hist);
+    setRunSettings(settings);
     fetch(`${DSO_API}/forecast/single`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         history: hist,
-        horizon: 8,
-        season_length: 7,
-        method_id: "ets",
+        ...settings,
         band: true,
       }),
     })
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
-      .then((d) =>
+      .then((r) =>
+        r.ok
+          ? r.json()
+          : r
+              .json()
+              .catch(() => ({}))
+              .then(() =>
+                Promise.reject(
+                  new Error(
+                    r.status === 422
+                      ? "the engine could not fit this series; check it has at least 4 numbers and try another season"
+                      : "the forecast service did not answer",
+                  ),
+                ),
+              ),
+      )
+      .then((d) => {
+        setResolved((d.settings ?? null) as ResolvedSettings | null);
         setForecast(
           (d.band ?? []).map((b: Band) => ({
             h: b.h,
@@ -1192,9 +1237,13 @@ function ForecastPreview({ series }: { series?: number[] | null }) {
             q50: Math.round(b.q50 * 10) / 10,
             q95: Math.round(b.q95 * 10) / 10,
           })),
-        ),
-      )
-      .catch((e) => setErr(String(e?.message ?? e)))
+        );
+      })
+      .catch((e) => {
+        setForecast([]);
+        setResolved(null);
+        setErr(e instanceof TypeError ? "the forecast service could not be reached" : String(e?.message ?? e));
+      })
       .finally(() => setBusy(false));
   };
 
@@ -1214,14 +1263,25 @@ function ForecastPreview({ series }: { series?: number[] | null }) {
   }, [series]);
 
   const total = HISTORY.length + FORECAST.length;
-  const maxY = Math.ceil(Math.max(160, ...HISTORY, ...FORECAST.map((f) => f.q95)) * 1.05);
-  const padding = { top: 20, right: 16, bottom: 26, left: 32 };
-  const w = 720;
-  const h = 280;
+  // C-06: ticks follow the data. The old fixed [0..160] ticks collapsed into
+  // one stack at the bottom left once demand went above 160.
+  const dataMax = Math.max(1, ...HISTORY, ...FORECAST.map((f) => f.q95));
+  const dataMin = Math.min(0, ...HISTORY, ...FORECAST.map((f) => f.q05));
+  const yTicks = niceTicks(dataMin, dataMax, 5);
+  const minY = yTicks[0];
+  const maxY = yTicks[yTicks.length - 1];
+  const tickLabelChars = Math.max(...yTicks.map((t) => formatTick(t).length));
+  // D-08: the canvas comes from chartFrame (the real rendered width on a
+  // phone, so a label of N units renders at N px); the padding follows the
+  // tick labels on both canvases (plotPadding).
+  const frame = chartFrame(svgPx);
+  const { w, h } = frame;
+  const padding = plotPadding(frame, tickLabelChars);
   const innerW = w - padding.left - padding.right;
   const innerH = h - padding.top - padding.bottom;
-  const xStep = innerW / (total - 1);
-  const yScale = (v: number) => innerH - (v / maxY) * innerH;
+  const xStep = innerW / Math.max(1, total - 1);
+  const yScale = (v: number) => innerH - ((v - minY) / (maxY - minY)) * innerH;
+  const xLabels = xLabelIndexes(total, HISTORY.length);
 
   const bandPoints = FORECAST.map(
     (f, i) => `${(HISTORY.length + i) * xStep + padding.left},${yScale(f.q95) + padding.top}`,
@@ -1285,9 +1345,7 @@ function ForecastPreview({ series }: { series?: number[] | null }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         history: HISTORY,
-        horizon: 8,
-        season_length: 7,
-        method_id: "ets",
+        ...runSettings,
         band: true,
       }),
     })
@@ -1305,70 +1363,23 @@ function ForecastPreview({ series }: { series?: number[] | null }) {
       .catch((e) => setErr(String(e?.message ?? e)));
   };
 
-  // SimOS arrivals contract: the same forecast as a SimOS-consumable
-  // arrivals.schedule YAML (humans audit the .xlsx, SimOS ingests this YAML).
-  const downloadForecastYaml = () => {
-    fetch(`${DSO_API}/forecast/single.yaml`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        history: HISTORY,
-        horizon: 8,
-        season_length: 7,
-        method_id: "ets",
-      }),
-    })
-      .then((r) => (r.ok ? r.blob() : Promise.reject(new Error(`HTTP ${r.status}`))))
-      .then((blob) => {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = "dso_arrivals.yaml";
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(url);
-      })
-      .catch((e) => setErr(String(e?.message ?? e)));
-  };
-
-  // The list-valued arrivals contract as a SimOS-importable xlsx: SimOS's
-  // excel-builder overlay accepts this to overwrite a scenario's arrivals.
-  const downloadForecastSimosXlsx = () => {
-    fetch(`${DSO_API}/forecast/single.simos.xlsx`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        history: HISTORY,
-        horizon: 8,
-        season_length: 7,
-        method_id: "ets",
-      }),
-    })
-      .then((r) => (r.ok ? r.blob() : Promise.reject(new Error(`HTTP ${r.status}`))))
-      .then((blob) => {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = "dso_simos_arrivals.xlsx";
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(url);
-      })
-      .catch((e) => setErr(String(e?.message ?? e)));
-  };
+  // "Send to SimOS" opens the hand-off panel: the customer states what one
+  // number means (day, week or month; orders or units; operating hours), sees
+  // the converted orders per hour, and only then downloads (journey C-01).
+  const [showSimos, setShowSimos] = useState(false);
 
   return (
-    <section style={{ padding: "0 1.5rem 1.25rem", maxWidth: 900, margin: "0 auto" }}>
+    <section id="dso-forecast" style={{ padding: "0 1.5rem 1.25rem", maxWidth: 900, margin: "0 auto" }}>
       <h3 style={{ fontSize: "1.1rem", marginBottom: 6 }}>
         Probabilistic forecast{" "}
         <span style={{ fontSize: "0.7rem", color: PALETTE.ok, fontWeight: 400 }}>(live)</span>
       </h3>
       <p style={{ margin: 0, marginBottom: 12, fontSize: "0.85rem", color: PALETTE.textDim }}>
         Solid line: q50 (median). Light band: q05 to q95 (the 90% prediction
-        interval), computed live by the engine via a single-method ETS fit. The
-        band widens with horizon, so uncertainty propagates rather than hiding.{" "}
+        interval), computed live by the engine. By default it detects the
+        repeating cycle in your numbers (for example 12 for monthly data with a
+        yearly peak) and picks a method that can carry it. The band widens with
+        horizon, so uncertainty propagates rather than hiding.{" "}
         {usingUpload ? (
           <span style={{ color: PALETTE.ok }}>
             Forecasting your uploaded demand_history.
@@ -1466,28 +1477,10 @@ function ForecastPreview({ series }: { series?: number[] | null }) {
           ⬇ Download Excel
         </button>
         <button
-          onClick={downloadForecastYaml}
+          onClick={() => setShowSimos((v) => !v)}
           disabled={FORECAST.length === 0}
-          title="Download the forecast as a SimOS arrivals.schedule YAML (the DSO→SimOS contract SimOS consumes directly)"
-          style={{
-            padding: "8px 14px",
-            fontSize: "0.8rem",
-            fontWeight: 600,
-            color: PALETTE.text,
-            backgroundColor: "transparent",
-            border: `1px solid ${PALETTE.border}`,
-            borderRadius: 6,
-            cursor: FORECAST.length === 0 ? "not-allowed" : "pointer",
-            opacity: FORECAST.length === 0 ? 0.5 : 1,
-            whiteSpace: "nowrap",
-          }}
-        >
-          ⬇ SimOS YAML
-        </button>
-        <button
-          onClick={downloadForecastSimosXlsx}
-          disabled={FORECAST.length === 0}
-          title="Download the forecast as a SimOS-importable arrivals xlsx (the list-valued contract SimOS's excel-builder overlay accepts)"
+          aria-expanded={showSimos}
+          title="Convert this forecast into SimOS arrivals (orders per hour) and download it for SimOS Builder"
           style={{
             padding: "8px 14px",
             fontSize: "0.8rem",
@@ -1501,9 +1494,60 @@ function ForecastPreview({ series }: { series?: number[] | null }) {
             whiteSpace: "nowrap",
           }}
         >
-          ⬇ SimOS arrivals (xlsx)
+          {showSimos ? "Hide SimOS hand-off" : "Send to SimOS"}
         </button>
       </div>
+      <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 12 }}>
+        <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <span style={settingLabel}>Season</span>
+          <select
+            value={String(season)}
+            onChange={(e) => {
+              const next = parseSeasonChoice(e.target.value);
+              setSeason(next);
+              runForecast(HISTORY, forecastRequestSettings(next, horizon));
+            }}
+            disabled={busy}
+            style={settingInput}
+          >
+            {SEASON_OPTIONS.map((o) => (
+              <option key={String(o.value)} value={String(o.value)}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <span style={settingLabel}>Periods ahead</span>
+          <input
+            type="number"
+            min={1}
+            max={MAX_HORIZON}
+            value={horizon}
+            onChange={(e) => setHorizon(clampHorizon(Number(e.target.value)))}
+            onBlur={() => runForecast(HISTORY, forecastRequestSettings(season, horizon))}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") runForecast(HISTORY, forecastRequestSettings(season, horizon));
+            }}
+            disabled={busy}
+            style={{ ...settingInput, width: 80 }}
+          />
+        </label>
+        {resolved && !err && (
+          <p style={{ margin: 0, flex: "1 1 260px", fontSize: "0.78rem", color: PALETTE.textMuted, lineHeight: 1.5 }}>
+            {describeSettings(resolved)} {resolved.note}
+          </p>
+        )}
+      </div>
+      {showSimos && FORECAST.length > 0 && (
+        <SimosHandoffPanel
+          source={{
+            kind: "series",
+            apiBase: DSO_API,
+            body: { history: HISTORY, ...runSettings },
+          }}
+        />
+      )}
       {err && (
         <p style={{ margin: "0 0 12px 0", fontSize: "0.8rem", color: PALETTE.warn }}>
           Live forecast unavailable ({err}); showing history only.
@@ -1517,8 +1561,8 @@ function ForecastPreview({ series }: { series?: number[] | null }) {
           padding: "1rem",
         }}
       >
-        <svg width="100%" height={h} viewBox={`0 0 ${w} ${h}`} style={{ display: "block" }}>
-          {[0, 40, 80, 120, 160].map((v) => (
+        <svg ref={svgRef} width="100%" height={h} viewBox={`0 0 ${w} ${h}`} style={{ display: "block" }}>
+          {yTicks.map((v) => (
             <g key={v}>
               <line
                 x1={padding.left}
@@ -1532,13 +1576,38 @@ function ForecastPreview({ series }: { series?: number[] | null }) {
                 x={padding.left - 6}
                 y={yScale(v) + padding.top + 3}
                 fill={PALETTE.textDim}
-                fontSize={9}
+                fontSize={frame.font}
                 textAnchor="end"
               >
-                {v}
+                {formatTick(v)}
               </text>
             </g>
           ))}
+          {xLabels.map((i) => (
+            <text
+              key={`x-${i}`}
+              x={i * xStep + padding.left}
+              y={h - padding.bottom + 14}
+              fill={i >= HISTORY.length ? PALETTE.median : PALETTE.textDim}
+              fontSize={frame.font}
+              textAnchor="middle"
+            >
+              {i + 1}
+            </text>
+          ))}
+          <text x={padding.left + innerW / 2} y={h - 6} fill={PALETTE.textFaint} fontSize={frame.font} textAnchor="middle">
+            Period (history, then forecast)
+          </text>
+          <text
+            x={10}
+            y={padding.top + innerH / 2}
+            fill={PALETTE.textFaint}
+            fontSize={frame.font}
+            textAnchor="middle"
+            transform={`rotate(-90 10 ${padding.top + innerH / 2})`}
+          >
+            Units
+          </text>
           <line
             x1={(HISTORY.length - 1) * xStep + padding.left}
             x2={(HISTORY.length - 1) * xStep + padding.left}
@@ -1548,14 +1617,21 @@ function ForecastPreview({ series }: { series?: number[] | null }) {
             strokeDasharray="3 3"
             strokeWidth={0.7}
           />
-          <text
-            x={(HISTORY.length - 1) * xStep + padding.left + 4}
-            y={padding.top + 10}
-            fill={PALETTE.textDim}
-            fontSize={9}
-          >
-            history → forecast
-          </text>
+          {(() => {
+            const bx = (HISTORY.length - 1) * xStep + padding.left;
+            const anchor = labelAnchor(bx, "history → forecast", frame);
+            return (
+              <text
+                x={anchor === "start" ? bx + 4 : bx - 4}
+                y={padding.top + 10}
+                fill={PALETTE.textDim}
+                fontSize={frame.font}
+                textAnchor={anchor}
+              >
+                history → forecast
+              </text>
+            );
+          })()}
           <polygon points={bandPoints} fill={PALETTE.band} fillOpacity={0.18} />
           <path d={historyPath} fill="none" stroke={PALETTE.textMuted} strokeWidth={1.5} />
           <path
@@ -1591,7 +1667,7 @@ function ForecastPreview({ series }: { series?: number[] | null }) {
             <text
               x={hover * xStep + padding.left}
               y={yScale(HISTORY[hover]) + padding.top - 8}
-              fontSize={10}
+              fontSize={frame.hover}
               fill={PALETTE.text}
               textAnchor="middle"
             >
@@ -1602,12 +1678,12 @@ function ForecastPreview({ series }: { series?: number[] | null }) {
             <text
               x={hover * xStep + padding.left}
               y={yScale(FORECAST[hover - HISTORY.length].q50) + padding.top - 8}
-              fontSize={10}
+              fontSize={frame.hover}
               fill={PALETTE.median}
               textAnchor="middle"
             >
               {FORECAST[hover - HISTORY.length].q50}
-              <tspan fill={PALETTE.textDim} fontSize={8}>
+              <tspan fill={PALETTE.textDim} fontSize={frame.small}>
                 {` (${FORECAST[hover - HISTORY.length].q05}-${FORECAST[hover - HISTORY.length].q95})`}
               </tspan>
             </text>
@@ -1620,6 +1696,21 @@ function ForecastPreview({ series }: { series?: number[] | null }) {
     </section>
   );
 }
+
+const settingLabel: React.CSSProperties = {
+  fontSize: "0.68rem",
+  color: PALETTE.textDim,
+  textTransform: "uppercase",
+  letterSpacing: "0.04em",
+};
+const settingInput: React.CSSProperties = {
+  padding: "0.4rem",
+  borderRadius: 4,
+  border: `1px solid ${PALETTE.border}`,
+  backgroundColor: PALETTE.bgPanel,
+  color: PALETTE.text,
+  fontSize: "0.8rem",
+};
 
 // Collapsible "How it works" section. Holds the censoring taxonomy detail
 // behind a single toggle so the landing leads with the value line, not the
@@ -1753,34 +1844,16 @@ function Footer() {
       }}
     >
       {/* Footer engines list removed — Bar 1 (top) is the canonical engine nav. */}
-      {IS_P2C_SITE ? (
-        <>
-          DemandSignalOS is part of Plan2Cash, included in the{" "}
-          <a href="https://sim-os.ai/pricing?from=plan2cash" style={{ color: PALETTE.link, textDecoration: "none" }}>
-            Premium
-          </a>{" "}
-          and{" "}
-          <a href="https://plan2cash.com/pricing" style={{ color: PALETTE.link, textDecoration: "none" }}>
-            Enterprise
-          </a>{" "}
-          plans and part of the{" "}
-          <a href="https://plan2cash.sim-os.ai" style={{ color: PALETTE.link, textDecoration: "none" }}>
-            P2C
-          </a>{" "}
-          closed loop. Contact: admin@sim-os.ai
-        </>
-      ) : (
-        <>
-          DemandSignalOS is included in the{" "}
-          <a href="https://sim-os.ai/pricing" style={{ color: PALETTE.link, textDecoration: "none" }}>
-            Premium
-          </a>{" "}
-          plan. For{" "}
-          <a href="https://plan2cash.com/pricing" style={{ color: PALETTE.link, textDecoration: "none" }}>
-            Enterprise
+      {/* E-09 / F-22: plan2cash.com is Enterprise only, so its footer names
+          no self-serve plan (lib/planCopy.ts, tested per site). */}
+      {footerParts(site()).map((part, i) =>
+        typeof part === "string" ? (
+          <span key={i}>{part}</span>
+        ) : (
+          <a key={i} href={part.href} style={{ color: PALETTE.link, textDecoration: "none" }}>
+            {part.label}
           </a>
-          , contact admin@sim-os.ai.
-        </>
+        ),
       )}
     </footer>
   );

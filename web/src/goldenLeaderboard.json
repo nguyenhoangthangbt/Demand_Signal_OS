@@ -1,0 +1,28 @@
+{
+  "series": "FACE-CRM",
+  "series_label": "Golden Beauty CPG face cream, 52 weeks",
+  "config": {
+    "bucket_period": "week",
+    "horizon": 4,
+    "season_length": 13,
+    "n_windows": 2,
+    "min_train_size": 43,
+    "forecaster_set": "all",
+    "intermittent_mode": "off",
+    "seed": 42
+  },
+  "content_hash": "a4b94c34958a3f1f",
+  "winner_method_id": "ces",
+  "winner_interval_calibration": "too_narrow",
+  "test_points": 8,
+  "entries": [
+    { "rank": 1, "method_id": "ces", "label": "CES", "crps": 134.478, "is_benchmark": false, "beats_all_benchmarks": true, "coverage_90": 0.5 },
+    { "rank": 2, "method_id": "ets", "label": "ETS", "crps": 139.183, "is_benchmark": false, "beats_all_benchmarks": true, "coverage_90": 0.5 },
+    { "rank": 3, "method_id": "ses", "label": "SES", "crps": 141.383, "is_benchmark": true, "beats_all_benchmarks": null, "coverage_90": 0.375 },
+    { "rank": 4, "method_id": "theta", "label": "Theta", "crps": 153.348, "is_benchmark": false, "beats_all_benchmarks": false, "coverage_90": 0.5 },
+    { "rank": 5, "method_id": "arima", "label": "ARIMA", "crps": 164.547, "is_benchmark": false, "beats_all_benchmarks": false, "coverage_90": 0.375 },
+    { "rank": 6, "method_id": "moving_average", "label": "Moving average", "crps": 164.622, "is_benchmark": true, "beats_all_benchmarks": null, "coverage_90": 0.25 },
+    { "rank": 7, "method_id": "gbm", "label": "LightGBM", "crps": 226.647, "is_benchmark": false, "beats_all_benchmarks": false, "coverage_90": 0.25 },
+    { "rank": 8, "method_id": "naive_seasonal", "label": "Seasonal naive", "crps": 313.183, "is_benchmark": true, "beats_all_benchmarks": null, "coverage_90": 0.25 }
+  ]
+}

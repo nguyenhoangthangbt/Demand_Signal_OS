@@ -170,8 +170,8 @@ DEMAND_HISTORY_SCHEMA: WorkbookSpec = WorkbookSpec(
                         "1. Fill Slots first (SKU + location + horizon). "
                         "2. Add historical demand rows on the History tab with a CensoringFlag per row. "
                         "3. STOCKOUT_CENSORED is NOT zero demand - DSO treats it as a lower bound for censoring-honest estimation. "
-                        "4. Upload to plan2cash.sim-os.ai/#/app for validation. "
-                        "5. After v0.1.5, validated history will run through DSO forecasting (ETS / Croston / TSB / SBA / GBM) and return a quantile-band forecast + drift signal."
+                        "4. Save the file and upload it to validate it: on the Templates tab in P2C, or in the Workbench section of DemandSignalOS. "
+                        "5. A validated file feeds the probabilistic forecast for this SKU and location (a forecast band, not a single number). It needs at least 4 periods of history."
                     ),
                     cell="B3",
                     field_type="str",

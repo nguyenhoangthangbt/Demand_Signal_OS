@@ -36,6 +36,7 @@ from demand_signal_os.forecasting.registry import (
     select_method_ids,
 )
 from demand_signal_os.leaderboard.types import (
+    IntervalCalibration,
     LeaderboardConfig,
     LeaderboardEntry,
     LeaderboardResult,
@@ -50,6 +51,33 @@ def _feature_set_hash(history: list[float]) -> str:
     """Deterministic digest of the input series (matches method provenance)."""
     arr = np.asarray(history, dtype=float)
     return hashlib.sha256(arr.tobytes()).hexdigest()[:16]
+
+
+# Coverage tolerance around the nominal level. Same 0.15 the signed receipt's
+# "90% interval coverage" check uses, so the board and the receipt agree.
+COVERAGE_TOLERANCE = 0.15
+# A 50% band holding more than 85% of actuals is padded, not honest.
+_TOO_WIDE_50 = 0.85
+
+
+def interval_calibration(
+    coverage_50: float | None, coverage_90: float | None
+) -> IntervalCalibration:
+    """Classify a band against its promise (nominal 50% and 90% coverage).
+
+    * ``too_narrow``: the 90% band caught under 75% of actuals, or the 50% band
+      under 35%. Planning safety stock off such a band under-protects.
+    * ``too_wide``: the 50% band caught over 85% of actuals (the band is
+      padded; safety stock off it over-protects).
+    * ``unknown``: coverage was not measured.
+    """
+    if coverage_50 is None or coverage_90 is None:
+        return "unknown"
+    if coverage_90 < 0.90 - COVERAGE_TOLERANCE or coverage_50 < 0.50 - COVERAGE_TOLERANCE:
+        return "too_narrow"
+    if coverage_50 > _TOO_WIDE_50:
+        return "too_wide"
+    return "ok"
 
 
 def _entry_from_summary(
@@ -68,6 +96,7 @@ def _entry_from_summary(
         coverage_50=summary.coverage_50,
         coverage_90=summary.coverage_90,
         beats_all_benchmarks=None if is_benchmark else summary.beats_all_benchmarks,
+        interval_calibration=interval_calibration(summary.coverage_50, summary.coverage_90),
     )
 
 
@@ -160,12 +189,14 @@ def orchestrate(
         entry.rank = i + 1
 
     winner_method_id, winner_is_benchmark = _select_winner(entries)
+    winner_entry = next(e for e in entries if e.method_id == winner_method_id)
 
     return LeaderboardResult(
         config=config,
         entries=entries,
         winner_method_id=winner_method_id,
         winner_is_benchmark=winner_is_benchmark,
+        winner_interval_calibration=winner_entry.interval_calibration,
         feature_set_hash=_feature_set_hash(history),
         n_methods=len(entries),
         content_hash=_content_hash(entries),

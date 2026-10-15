@@ -27,6 +27,7 @@ CANONICAL_QUANTILES: tuple[float, ...] = (0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.
 
 IntermittentMode = Literal["auto", "on", "off"]
 HorizonLabel = Literal["operational", "tactical", "strategic"]
+IntervalCalibration = Literal["ok", "too_narrow", "too_wide", "unknown"]
 # Forecaster-set selector — lets a user focus the panel (and cut runtime).
 # "all"/"full" run the whole panel; the rest narrow to a class. The 3 naive
 # benchmarks ALWAYS run regardless (the beats-naive gate). For full control,
@@ -91,6 +92,10 @@ class LeaderboardEntry(BaseModel):
     coverage_90: float | None
     # None for benchmarks (they ARE the gate); bool for forecasters.
     beats_all_benchmarks: bool | None
+    # Does the band keep its promise? "too_narrow" when the 90% band caught
+    # well under 90% of actuals (or the 50% band well under 50%). Display
+    # only: NOT part of ranking or ``content_hash`` (audit C-09 / F-21).
+    interval_calibration: IntervalCalibration = "unknown"
 
 
 class LeaderboardResult(BaseModel):
@@ -104,6 +109,10 @@ class LeaderboardResult(BaseModel):
     entries: list[LeaderboardEntry]
     winner_method_id: str
     winner_is_benchmark: bool
+    # The winner's band calibration, surfaced next to the win so a model that
+    # beats naive on CRPS but whose 90% band caught half the actuals is not
+    # shown as an unqualified green "Winner" (audit C-09 / F-21).
+    winner_interval_calibration: IntervalCalibration = "unknown"
     feature_set_hash: str
     n_methods: int
     content_hash: str
